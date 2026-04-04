@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y llvm-14-dev clang-14 libclang-14-dev cmake ninja-build python3-pip
+        sudo pip3 install meson pytest
+    - name: Build C++
+      run: |
+        CXX=clang++-14 CC=clang-14 meson setup build
+        meson compile -C build
+        meson test -C build
+    - name: Test Python MCP
+      run: |
+        cd python
+        pip install -e . pytest
+        PATH="$PWD/../build:$PATH" pytest tests/

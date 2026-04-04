@@ -1,0 +1,35 @@
+# Maintainer: TODO — set before publishing to AUR
+
+pkgname=astharbor
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="A Clang-first C/C++ code analyzer with deterministic AST static analysis"
+arch=('x86_64' 'aarch64')
+url="https://github.com/kidoz/astharbor"
+license=('MIT')
+depends=('llvm' 'clang')
+makedepends=('meson' 'ninja' 'gtest')
+
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+# sha256sums must be generated before publishing: run `updpkgsums`
+sha256sums=('SKIP')
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  
+  # arch-meson automatically configures the project with standard Arch Linux 
+  # compilation flags, release buildtype, and /usr prefix.
+  arch-meson . build
+  
+  meson compile -C build
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  meson test -C build --print-errorlogs
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+  meson install -C build --destdir="${pkgdir}"
+}

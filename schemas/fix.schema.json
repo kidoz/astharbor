@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "fixId": {
+      "type": "string",
+      "description": "Unique identifier for this fix"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of what the fix does"
+    },
+    "safety": {
+      "type": "string",
+      "enum": ["safe", "review", "manual"],
+      "description": "Safety classification: safe (auto-apply OK), review (needs human review), manual (requires manual intervention)"
+    },
+    "replacementText": {
+      "type": "string",
+      "description": "The text to insert at the replacement location"
+    },
+    "offset": {
+      "type": "integer",
+      "description": "Byte offset from the start of the file where replacement begins"
+    },
+    "length": {
+      "type": "integer",
+      "description": "Number of bytes to replace starting at offset"
+    }
+  },
+  "required": ["fixId", "description", "safety", "replacementText", "offset", "length"]
+}

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astharbor-mcp"
+version = "1.0.0"
+description = "FastMCP server for ASTHarbor"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp",
+    "fastmcp",
+    "pydantic",
+]
+
+[project.scripts]
+astharbor-mcp = "astharbor_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
