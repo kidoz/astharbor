@@ -12,6 +12,7 @@
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
 #include "../../src/rules/portability/vla_in_cxx.hpp"
+#include "../../src/rules/portability/c_style_variadic.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
 #include "../../src/rules/readability/use_using_alias.hpp"
 #include "../../src/rules/ub/c_style_cast_pointer_punning.hpp"
@@ -2285,6 +2286,43 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresPointerParameter") {
             void test(void *p) {
                 free(p);
             }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── portability/c-style-variadic (CERT DCL50-CPP) ───────────────────
+
+TEST_CASE("PortabilityCStyleVariadicRuleTest.DetectsVariadicDefinition") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+        R"cpp(
+            void log(const char *fmt, ...) {}
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "portability/c-style-variadic");
+}
+
+TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresExternCDeclaration") {
+    // C-linkage functions like printf are expected to be variadic.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+        R"cpp(
+            extern "C" int printf(const char *, ...);
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresNonVariadicFunction") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+        R"cpp(
+            void log(const char *msg) {}
         )cpp");
 
     REQUIRE(result.success);

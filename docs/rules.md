@@ -105,6 +105,7 @@ pure AST matcher.
 
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
+| `portability/c-style-variadic` | C-style variadic function definition (`void f(int, ...)`) — use templates. | CERT DCL50-CPP |
 | `portability/vla-in-cxx` | Variable-length arrays in C++ — not portable, not in ISO C++. | `clang-tidy` `cppcoreguidelines-avoid-c-arrays` |
 
 ### `best-practice/`

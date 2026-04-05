@@ -44,6 +44,7 @@
 #include "../rules/ub/reinterpret_cast_type_punning.hpp"
 #include "../rules/readability/use_using_alias.hpp"
 #include "../rules/portability/vla_in_cxx.hpp"
+#include "../rules/portability/c_style_variadic.hpp"
 #include "../rules/best_practice/no_raw_new_delete.hpp"
 #include "../rules/best_practice/explicit_single_arg_ctor.hpp"
 #include "../rules/ub/c_style_cast_pointer_punning.hpp"
@@ -107,6 +108,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbReinterpretCastTypePunningRule>());
     registry.registerRule(std::make_unique<ReadabilityUseUsingAliasRule>());
     registry.registerRule(std::make_unique<PortabilityVlaInCxxRule>());
+    registry.registerRule(std::make_unique<PortabilityCStyleVariadicRule>());
     registry.registerRule(std::make_unique<BestPracticeNoRawNewDeleteRule>());
     registry.registerRule(std::make_unique<BestPracticeExplicitSingleArgCtorRule>());
     registry.registerRule(std::make_unique<UbCStyleCastPointerPunningRule>());
