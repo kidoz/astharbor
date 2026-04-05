@@ -15,6 +15,7 @@
 #include "../../src/rules/ub/sizeof_array_parameter.hpp"
 #include "../../src/rules/ub/use_after_move.hpp"
 #include "../../src/rules/ub/double_free_local.hpp"
+#include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -1067,6 +1068,68 @@ TEST(UbDoubleFreeLocalRuleTest, IgnoresSingleDelete) {
             void test() {
                 int *p = new int(42);
                 delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── uninitialized-local (Tier 2) ──────────────────────────────────────
+
+TEST(UbUninitializedLocalRuleTest, DetectsReadBeforeWrite) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            int test() {
+                int x;
+                return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/uninitialized-local");
+}
+
+TEST(UbUninitializedLocalRuleTest, IgnoresWriteBeforeRead) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            int test() {
+                int x;
+                x = 42;
+                return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbUninitializedLocalRuleTest, IgnoresInitializedVar) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            int test() {
+                int x = 42;
+                return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbUninitializedLocalRuleTest, IgnoresAddressOfFollowedByRead) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            extern void init(int* p);
+            int test() {
+                int x;
+                init(&x);
+                return x + 1;
             }
         )cpp");
 
