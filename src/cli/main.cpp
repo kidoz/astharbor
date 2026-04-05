@@ -259,7 +259,7 @@ int main(int argc, const char **argv) {
         if (formatValue == "json")
             emitter = std::make_unique<JsonEmitter>();
         else if (formatValue == "sarif")
-            emitter = std::make_unique<SarifEmitter>();
+            emitter = std::make_unique<SarifEmitter>(&registry);
         else
             emitter = std::make_unique<TextEmitter>();
 
