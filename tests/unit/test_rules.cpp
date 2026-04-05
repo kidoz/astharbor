@@ -4,6 +4,7 @@
 #include "../../src/rules/best_practice/no_raw_new_delete.hpp"
 #include "../../src/rules/bugprone/assignment_in_condition.hpp"
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
+#include "../../src/rules/bugprone/swapped_arguments.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
 #include "../../src/rules/portability/vla_in_cxx.hpp"
@@ -1560,4 +1561,107 @@ TEST(UbDanglingReferenceRuleTest, IgnoresValueReturn) {
 
     ASSERT_TRUE(result.success);
     EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── bugprone/swapped-arguments ────────────────────────────────────────
+
+TEST(BugproneSwappedArgumentsRuleTest, DetectsSwappedDstSrc) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void copy(char *dst, const char *src, unsigned long n);
+            void caller() {
+                char dst[32];
+                char src[32];
+                copy(src, dst, 32);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "bugprone/swapped-arguments");
+}
+
+TEST(BugproneSwappedArgumentsRuleTest, IgnoresCorrectArgumentOrder) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void copy(char *dst, const char *src, unsigned long n);
+            void caller() {
+                char dst[32];
+                char src[32];
+                copy(dst, src, 32);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BugproneSwappedArgumentsRuleTest, IgnoresSingleLetterParameterNames) {
+    // Single-letter names are common and carry no semantic weight; the
+    // rule requires length >= 2 on both sides to avoid the noise.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void f(int a, int b);
+            void caller() {
+                int a = 1, b = 2;
+                f(b, a);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BugproneSwappedArgumentsRuleTest, IgnoresLiteralArguments) {
+    // A literal in one of the positions means the programmer intended
+    // a constant, so the "swap" shape doesn't apply.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void f(int width, int height);
+            void caller() {
+                int width = 10;
+                f(width, 20);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BugproneSwappedArgumentsRuleTest, IgnoresMismatchedNames) {
+    // Only one of the two names cross-matches; a single coincidence is
+    // not enough for the swap heuristic to fire.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void f(int width, int height);
+            void caller() {
+                int width = 10;
+                int other = 20;
+                f(other, width);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BugproneSwappedArgumentsRuleTest, DetectsSwapAmongThreeArguments) {
+    // Only the first two are swapped; the third position is untouched.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+        R"cpp(
+            void draw(int width, int height, int color);
+            void caller() {
+                int width = 1, height = 2, color = 3;
+                draw(height, width, color);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
 }
