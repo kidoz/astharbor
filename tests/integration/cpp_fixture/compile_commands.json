@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "__FIXTURE_DIR__",
+    "command": "clang++ -std=c++17 -c main.cpp",
+    "file": "main.cpp"
+  }
+]
