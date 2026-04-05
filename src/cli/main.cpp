@@ -7,6 +7,8 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <regex>
+#include <set>
 #include <string>
 #include <sys/wait.h>
 #include <tuple>
@@ -442,6 +444,50 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                        std::chrono::steady_clock::now() - startTime)
                        .count();
 
+    // Apply .astharbor.yml HeaderFilterRegex if configured: only keep
+    // findings whose file path matches the regex. Files in the explicit
+    // source path list are always kept (the regex is intended for
+    // transitively-included headers). An invalid regex is reported on
+    // stderr and treated as "no filter".
+    if (!projectConfig.headerFilterRegex.empty()) {
+        try {
+            std::regex filterRegex(projectConfig.headerFilterRegex);
+            std::vector<std::string> absSources;
+            absSources.reserve(sourcePaths.size());
+            for (const auto &path : sourcePaths) {
+                std::error_code ec;
+                auto absolute = std::filesystem::absolute(path, ec);
+                absSources.push_back(ec ? path : absolute.string());
+            }
+            auto isMainSource = [&](const std::string &file) {
+                for (const auto &source : absSources) {
+                    if (source == file) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            size_t beforeCount = allFindings.size();
+            allFindings.erase(
+                std::remove_if(allFindings.begin(), allFindings.end(),
+                               [&](const Finding &finding) {
+                                   if (isMainSource(finding.file)) {
+                                       return false;
+                                   }
+                                   return !std::regex_search(finding.file, filterRegex);
+                               }),
+                allFindings.end());
+            if (verbose) {
+                llvm::errs() << "[verbose] HeaderFilterRegex filtered "
+                             << (beforeCount - allFindings.size()) << " of " << beforeCount
+                             << " finding(s)\n";
+            }
+        } catch (const std::regex_error &err) {
+            llvm::errs() << "Warning: invalid HeaderFilterRegex in .astharbor.yml: "
+                         << err.what() << "\n";
+        }
+    }
+
     AnalysisResult result;
     result.runId = generateRunId();
     result.success = (worstExitCode == 0);
@@ -747,60 +793,162 @@ int main(int argc, const char **argv) {
 
         const bool isCxx = sourceFile.ends_with(".cpp") || sourceFile.ends_with(".cc") ||
                            sourceFile.ends_with(".cxx") || sourceFile.ends_with(".hpp");
-        auto runCompiler = [&](const std::string &compiler) -> std::pair<int, int> {
+
+        struct CompilerReport {
+            int exitCode = -1;
+            int errorCount = 0;
+            int warningCount = 0;
+            // Distinct diagnostic codes bucketed by the "[-Wflag]" suffix
+            // Clang/GCC include on warning lines. Allows us to surface
+            // "clang says X, gcc doesn't" without parsing column/offsets.
+            std::set<std::string> codes;
+        };
+
+        auto runCompiler = [&](const std::string &compiler) -> CompilerReport {
+            CompilerReport report;
             std::string langFlag = isCxx ? "-xc++" : "-xc";
             std::string command = compiler + " " + langFlag +
                                    " -fsyntax-only -Wall -Wextra \"" + sourceFile +
                                    "\" 2>&1";
             FILE *pipe = popen(command.c_str(), "r");
             if (pipe == nullptr) {
-                return {-1, 0};
+                return report;
             }
-            int warningCount = 0;
-            char buffer[1024];
+            std::regex codeRegex(R"(\[-W([^\]]+)\])");
+            char buffer[4096];
             while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
                 std::string line = buffer;
-                if (line.contains("warning:") || line.contains("error:")) {
-                    warningCount++;
+                bool isWarning = line.contains("warning:");
+                bool isError = line.contains("error:");
+                if (!isWarning && !isError) {
+                    continue;
+                }
+                if (isError) {
+                    report.errorCount++;
+                } else {
+                    report.warningCount++;
+                }
+                std::smatch match;
+                if (std::regex_search(line, match, codeRegex) && match.size() > 1) {
+                    report.codes.insert(match[1].str());
                 }
             }
             int status = pclose(pipe);
-            int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            return {exitCode, warningCount};
+            report.exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            return report;
         };
 
-        auto [clangExit, clangDiags] = runCompiler("clang++");
-        auto [gccExit, gccDiags] = runCompiler("g++");
+        CompilerReport clangReport = runCompiler("clang++");
+        CompilerReport gccReport = runCompiler("g++");
+
+        // Diff the diagnostic-code sets so users see what each compiler
+        // noticed that the other didn't.
+        std::vector<std::string> clangOnly;
+        std::vector<std::string> gccOnly;
+        std::vector<std::string> both;
+        std::set_difference(clangReport.codes.begin(), clangReport.codes.end(),
+                            gccReport.codes.begin(), gccReport.codes.end(),
+                            std::back_inserter(clangOnly));
+        std::set_difference(gccReport.codes.begin(), gccReport.codes.end(),
+                            clangReport.codes.begin(), clangReport.codes.end(),
+                            std::back_inserter(gccOnly));
+        std::set_intersection(clangReport.codes.begin(), clangReport.codes.end(),
+                              gccReport.codes.begin(), gccReport.codes.end(),
+                              std::back_inserter(both));
+
+        const bool agree = clangReport.exitCode == gccReport.exitCode &&
+                           clangOnly.empty() && gccOnly.empty() &&
+                           clangReport.errorCount == gccReport.errorCount;
+
+        auto joinCodes = [](const std::vector<std::string> &codes) {
+            std::string result;
+            for (size_t i = 0; i < codes.size(); ++i) {
+                if (i > 0) {
+                    result += "\", \"";
+                }
+                result += codes[i];
+            }
+            return result;
+        };
 
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
+            auto emitReport = [](const char *name, const CompilerReport &report) {
+                std::cout << R"(  ")" << name << R"(": {)"
+                          << R"("available": )" << (report.exitCode >= 0 ? "true" : "false")
+                          << R"(, "exit": )" << report.exitCode
+                          << R"(, "errors": )" << report.errorCount
+                          << R"(, "warnings": )" << report.warningCount
+                          << R"(, "codes": [)";
+                bool first = true;
+                for (const auto &code : report.codes) {
+                    std::cout << (first ? "\"" : ", \"") << code << "\"";
+                    first = false;
+                }
+                std::cout << "]}";
+            };
             std::cout << "{\n";
             std::cout << R"(  "file": ")" << sourceFile << "\",\n";
-            std::cout << R"(  "clang": {"available": )" << (clangExit >= 0 ? "true" : "false")
-                      << ", \"exit\": " << clangExit << ", \"diagnostics\": " << clangDiags
-                      << "},\n";
-            std::cout << R"(  "gcc": {"available": )" << (gccExit >= 0 ? "true" : "false")
-                      << ", \"exit\": " << gccExit << ", \"diagnostics\": " << gccDiags << "},\n";
-            std::cout << "  \"agreement\": "
-                      << (clangExit == gccExit && clangDiags == gccDiags ? "true" : "false")
-                      << "\n";
+            emitReport("clang", clangReport);
+            std::cout << ",\n";
+            emitReport("gcc", gccReport);
+            std::cout << ",\n";
+            std::cout << R"(  "clangOnly": [)";
+            if (!clangOnly.empty()) {
+                std::cout << "\"" << joinCodes(clangOnly) << "\"";
+            }
+            std::cout << "],\n";
+            std::cout << R"(  "gccOnly": [)";
+            if (!gccOnly.empty()) {
+                std::cout << "\"" << joinCodes(gccOnly) << "\"";
+            }
+            std::cout << "],\n";
+            std::cout << R"(  "shared": [)";
+            if (!both.empty()) {
+                std::cout << "\"" << joinCodes(both) << "\"";
+            }
+            std::cout << "],\n";
+            std::cout << R"(  "agreement": )" << (agree ? "true" : "false") << "\n";
             std::cout << "}\n";
         } else {
+            auto printReport = [](const char *label, const CompilerReport &report) {
+                std::cout << "  " << label;
+                if (report.exitCode < 0) {
+                    std::cout << " not available\n";
+                    return;
+                }
+                std::cout << " exit=" << report.exitCode
+                          << ", errors=" << report.errorCount
+                          << ", warnings=" << report.warningCount;
+                if (!report.codes.empty()) {
+                    std::cout << " [";
+                    bool first = true;
+                    for (const auto &code : report.codes) {
+                        std::cout << (first ? "" : " ") << "-W" << code;
+                        first = false;
+                    }
+                    std::cout << "]";
+                }
+                std::cout << "\n";
+            };
             std::cout << "ASTHarbor Compare: " << sourceFile << "\n";
-            std::cout << "  clang++: ";
-            if (clangExit < 0) {
-                std::cout << "not available\n";
-            } else {
-                std::cout << "exit=" << clangExit << ", diagnostics=" << clangDiags << "\n";
-            }
-            std::cout << "  g++:     ";
-            if (gccExit < 0) {
-                std::cout << "not available\n";
-            } else {
-                std::cout << "exit=" << gccExit << ", diagnostics=" << gccDiags << "\n";
-            }
-            if (clangExit >= 0 && gccExit >= 0) {
-                bool agree = (clangExit == gccExit) && (clangDiags == gccDiags);
+            printReport("clang++:", clangReport);
+            printReport("g++:    ", gccReport);
+            if (clangReport.exitCode >= 0 && gccReport.exitCode >= 0) {
+                if (!clangOnly.empty()) {
+                    std::cout << "  Clang-only codes: ";
+                    for (const auto &code : clangOnly) {
+                        std::cout << "-W" << code << " ";
+                    }
+                    std::cout << "\n";
+                }
+                if (!gccOnly.empty()) {
+                    std::cout << "  GCC-only codes:   ";
+                    for (const auto &code : gccOnly) {
+                        std::cout << "-W" << code << " ";
+                    }
+                    std::cout << "\n";
+                }
                 std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ")
                           << "\n";
             }
