@@ -14,11 +14,11 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y llvm-14-dev clang-14 libclang-14-dev cmake ninja-build python3-pip
+        sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev cmake ninja-build python3-pip
         sudo pip3 install meson pytest
     - name: Build C++
       run: |
-        CXX=clang++-14 CC=clang-14 meson setup build
+        CXX=clang++-18 CC=clang-18 meson setup build
         meson compile -C build
         meson test -C build
     - name: Test Python MCP
