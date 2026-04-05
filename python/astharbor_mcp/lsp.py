@@ -64,6 +64,54 @@ def _path_to_uri(path: str) -> str:
     return "file://" + urllib.parse.quote(path)
 
 
+def _byte_offset_to_position(text: str, byte_offset: int) -> dict[str, int]:
+    """Convert a byte offset in a UTF-8 file into an LSP position.
+
+    LSP 3.17 defines `character` as an offset into UTF-16 code units on the
+    containing line. For ASCII-only files every byte is one UTF-16 unit,
+    but to be correct for non-ASCII sources we round-trip through UTF-8
+    bytes to find the line, then encode the line prefix as UTF-16 to
+    count code units.
+    """
+    encoded = text.encode("utf-8")
+    clamped = max(0, min(byte_offset, len(encoded)))
+    prefix_text = encoded[:clamped].decode("utf-8", errors="replace")
+    line = prefix_text.count("\n")
+    last_newline = prefix_text.rfind("\n")
+    line_prefix = prefix_text[last_newline + 1:] if last_newline != -1 else prefix_text
+    # LSP character = number of UTF-16 code units in the line prefix.
+    character = len(line_prefix.encode("utf-16-le")) // 2
+    return {"line": line, "character": character}
+
+
+def _fix_to_code_action(finding: dict[str, Any], fix: dict[str, Any],
+                        diagnostic: dict[str, Any], uri: str,
+                        file_text: str) -> dict[str, Any] | None:
+    """Map a single ASTHarbor fix to an LSP CodeAction with a WorkspaceEdit.
+
+    Returns None if the fix lacks offset/length metadata — the CLI only
+    emits those for rules whose fixes are byte-accurate.
+    """
+    offset = fix.get("offset")
+    length = fix.get("length")
+    if offset is None or length is None:
+        return None
+    start = _byte_offset_to_position(file_text, int(offset))
+    end = _byte_offset_to_position(file_text, int(offset) + int(length))
+    text_edit = {
+        "range": {"start": start, "end": end},
+        "newText": fix.get("replacementText", ""),
+    }
+    title = fix.get("description") or f"ASTHarbor: {finding.get('ruleId', '')}"
+    return {
+        "title": title,
+        "kind": "quickfix",
+        "diagnostics": [diagnostic],
+        "edit": {"changes": {uri: [text_edit]}},
+        "isPreferred": True,
+    }
+
+
 def _finding_to_diagnostic(finding: dict[str, Any]) -> dict[str, Any]:
     """Map an ASTHarbor finding to an LSP Diagnostic object."""
     # LSP uses 0-based positions; ASTHarbor uses 1-based. Clamp to 0 so a
@@ -89,6 +137,12 @@ class LspServer:
         self._running = True
         # Map of URI -> path so publishDiagnostics can echo the caller's URI.
         self._open_uris: dict[str, str] = {}
+        # Cache the most recent analysis findings per URI so
+        # textDocument/codeAction can map a requested range back to the
+        # fixes emitted by the analyzer. The analyzer is not re-invoked
+        # on every code action request — we rely on the last didOpen/
+        # didSave analysis that produced the published diagnostics.
+        self._findings_by_uri: dict[str, list[dict[str, Any]]] = {}
 
     # ── Framing ────────────────────────────────────────────────────────
 
@@ -152,6 +206,10 @@ class LspServer:
                 "interFileDependencies": False,
                 "workspaceDiagnostics": False,
             },
+            "codeActionProvider": {
+                "codeActionKinds": ["quickfix"],
+                "resolveProvider": False,
+            },
         }
         self._respond(request_id, result={
             "capabilities": capabilities,
@@ -187,15 +245,70 @@ class LspServer:
         if not uri:
             return
         self._open_uris.pop(uri, None)
+        self._findings_by_uri.pop(uri, None)
         # Clear diagnostics for closed files.
         self._notify("textDocument/publishDiagnostics",
                      {"uri": uri, "diagnostics": []})
+
+    def _handle_code_action(self, request_id: Any, params: dict[str, Any]) -> None:
+        """Return quick-fix CodeActions for findings overlapping the range.
+
+        The request gives us a range (the user's cursor or selection) and a
+        `context.diagnostics` array — diagnostics the client is considering
+        for code actions. We match those back to the cached findings by
+        range+code and emit a CodeAction for each safe fix.
+        """
+        uri = params.get("textDocument", {}).get("uri", "")
+        if not uri:
+            self._respond(request_id, result=[])
+            return
+        findings = self._findings_by_uri.get(uri, [])
+        if not findings:
+            self._respond(request_id, result=[])
+            return
+        path = self._open_uris.get(uri) or _uri_to_path(uri)
+        try:
+            with open(path, encoding="utf-8", errors="replace") as file_obj:
+                file_text = file_obj.read()
+        except OSError as exc:
+            log.warning("could not read %s for code actions: %s", path, exc)
+            self._respond(request_id, result=[])
+            return
+
+        # Diagnostics the client is asking about. An empty list means
+        # "everything in the requested range". We use the set of (code,
+        # start.line) pairs to filter findings.
+        context_diagnostics = (params.get("context") or {}).get("diagnostics") or []
+        wanted: set[tuple[str, int]] | None = None
+        if context_diagnostics:
+            wanted = set()
+            for diag in context_diagnostics:
+                code = diag.get("code", "")
+                line = diag.get("range", {}).get("start", {}).get("line", -1)
+                wanted.add((str(code), line))
+
+        actions: list[dict[str, Any]] = []
+        for finding in findings:
+            diagnostic = _finding_to_diagnostic(finding)
+            if wanted is not None:
+                key = (str(diagnostic.get("code", "")),
+                       diagnostic["range"]["start"]["line"])
+                if key not in wanted:
+                    continue
+            for fix in finding.get("fixes", []):
+                if fix.get("safety") != "safe":
+                    continue
+                action = _fix_to_code_action(finding, fix, diagnostic, uri, file_text)
+                if action is not None:
+                    actions.append(action)
+        self._respond(request_id, result=actions)
 
     # ── Analysis bridge ────────────────────────────────────────────────
 
     def _analyze_and_publish(self, uri: str, path: str) -> None:
         """Invoke the CLI on `path` and publish a diagnostics notification."""
         diagnostics: list[dict[str, Any]] = []
+        cached_findings: list[dict[str, Any]] = []
         try:
             raw = cli_bridge.run_analyze(path, fmt="json")
             parsed = json.loads(raw)
@@ -206,8 +319,10 @@ class LspServer:
                 if finding.get("file") and finding["file"] != path:
                     continue
                 diagnostics.append(_finding_to_diagnostic(finding))
+                cached_findings.append(finding)
         except Exception as exc:  # noqa: BLE001 — any failure should degrade gracefully
             log.warning("analyze failed for %s: %s", path, exc)
+        self._findings_by_uri[uri] = cached_findings
         self._notify("textDocument/publishDiagnostics",
                      {"uri": uri, "diagnostics": diagnostics})
 
@@ -240,6 +355,8 @@ class LspServer:
                 self._handle_did_close(params)
             elif method == "textDocument/didChange":
                 pass  # we only re-analyze on save
+            elif method == "textDocument/codeAction":
+                self._handle_code_action(request_id, params)
             else:
                 # Unknown method. Reply with MethodNotFound only if this was
                 # a request; notifications silently ignore unknown methods
