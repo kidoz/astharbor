@@ -1,0 +1,86 @@
+name: Code Scanning
+
+# Runs ASTHarbor against its own source and uploads the resulting SARIF
+# report to GitHub code scanning. Anyone browsing the repo on github.com
+# will see findings rendered inline on the Security tab.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly dogfood run so drift in the rule set shows up even without a push.
+    - cron: "0 6 * * 1"
+
+jobs:
+  astharbor-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM/Clang toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            llvm-14-dev clang-14 libclang-14-dev \
+            cmake ninja-build python3-pip
+          sudo pip3 install meson
+
+      - name: Configure and build astharbor
+        run: |
+          CXX=clang++-14 CC=clang-14 meson setup build
+          meson compile -C build
+
+      - name: Run astharbor on its own source (SARIF)
+        run: |
+          mkdir -p reports
+          # The analyzer exits 1 when findings exist — that is not a CI
+          # failure for the scanning workflow, only a real operational
+          # error (exit >= 2) should fail the job.
+          set +e
+          ./build/astharbor analyze \
+            src/cli/main.cpp \
+            src/core/analyzer.cpp \
+            src/core/rule_registry.cpp \
+            src/emitters/json_emitter.cpp \
+            src/emitters/text_emitter.cpp \
+            src/emitters/sarif_emitter.cpp \
+            --format=sarif \
+            -- \
+            -std=c++23 -I./include -I/usr/lib/llvm-14/include \
+            > reports/astharbor.sarif
+          status=$?
+          set -e
+          if [ "$status" -ge 2 ]; then
+            echo "astharbor failed with operational error (exit $status)"
+            exit "$status"
+          fi
+          echo "astharbor produced reports/astharbor.sarif"
+          # Show a short summary so the log is self-explanatory.
+          python3 - <<'PY'
+          import json
+          with open("reports/astharbor.sarif") as fp:
+              sarif = json.load(fp)
+          run = sarif["runs"][0]
+          print(f"Rules advertised: {len(run['tool']['driver']['rules'])}")
+          print(f"Findings: {len(run['results'])}")
+          PY
+
+      - name: Upload SARIF to GitHub code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/astharbor.sarif
+          category: astharbor
+
+      - name: Archive SARIF as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: astharbor-sarif
+          path: reports/astharbor.sarif
+          retention-days: 30
