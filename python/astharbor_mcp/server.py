@@ -6,7 +6,7 @@ import json
 
 from fastmcp import FastMCP
 
-from . import cli_bridge
+from . import cli_bridge, tasks
 from .models import AnalysisResult
 from .resources import cache
 
@@ -85,6 +85,51 @@ def read_finding(run_id: str, finding_index: int) -> str:
     if finding is None:
         return f"Error: finding not found (run_id={run_id}, index={finding_index})"
     return json.dumps(finding, indent=2)
+
+
+# ── Background task tools ──────────────────────────────────────────────
+
+
+@mcp.tool()
+def start_background_analysis(directory: str, checks: str = "", jobs: int = 1) -> str:
+    """Kick off analyze_project in the background. Returns a task id that
+    callers can poll via `get_task_status` and `get_task_result`."""
+    task_id = tasks.manager.start(
+        "analyze_project",
+        tasks.analyze_project_worker,
+        directory=directory,
+        checks=checks,
+        jobs=jobs,
+    )
+    return json.dumps({"taskId": task_id, "status": "started"}, indent=2)
+
+
+@mcp.tool()
+def get_task_status(task_id: str) -> str:
+    """Return the current status of a background task."""
+    status = tasks.manager.status_dict(task_id)
+    if status is None:
+        return f"Error: task not found: {task_id}"
+    return json.dumps(status, indent=2)
+
+
+@mcp.tool()
+def get_task_result(task_id: str) -> str:
+    """Return the final JSON result of a completed background task."""
+    task = tasks.manager.get(task_id)
+    if task is None:
+        return f"Error: task not found: {task_id}"
+    if task.status == "failed":
+        return f"Error: task {task_id} failed: {task.error}"
+    if task.status != "completed":
+        return f"Task {task_id} still {task.status}; poll `get_task_status` until it finishes."
+    return tasks.manager.result_json(task_id) or ""
+
+
+@mcp.tool()
+def list_background_tasks() -> str:
+    """List all background tasks seen this session."""
+    return json.dumps(tasks.manager.list_tasks(), indent=2)
 
 
 # ── Resources ──────────────────────────────────────────────────────────
