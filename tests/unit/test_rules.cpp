@@ -17,6 +17,7 @@
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
+#include "../../src/rules/resource/leak_on_throw.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -1350,6 +1351,106 @@ TEST(UbNullDerefAfterCheckRuleTest, IgnoresDerefOutsideThenBranch) {
                     return -1;
                 }
                 return *p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── resource/leak-on-throw (Tier 2) ───────────────────────────────────
+
+TEST(ResourceLeakOnThrowRuleTest, DetectsLeakWhenThrowFollowsNew) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+        R"cpp(
+            struct Err { const char *what; };
+            void test(bool flag) {
+                int *p = new int(42);
+                if (flag) {
+                    throw Err{"bad"};
+                }
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "resource/leak-on-throw");
+}
+
+TEST(ResourceLeakOnThrowRuleTest, IgnoresDeleteBeforeThrow) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+        R"cpp(
+            struct Err { const char *what; };
+            void test(bool flag) {
+                int *p = new int(42);
+                if (flag) {
+                    delete p;
+                    throw Err{"bad"};
+                }
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(ResourceLeakOnThrowRuleTest, IgnoresFunctionWithTryBlock) {
+    // Any `try` in the function suppresses the rule conservatively —
+    // the throw might be caught locally and wouldn't actually leak.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+        R"cpp(
+            struct Err { const char *what; };
+            void test(bool flag) {
+                int *p = new int(42);
+                try {
+                    if (flag) {
+                        throw Err{"bad"};
+                    }
+                } catch (...) {}
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(ResourceLeakOnThrowRuleTest, IgnoresNoThrowPath) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(ResourceLeakOnThrowRuleTest, IgnoresReassignmentBeforeThrow) {
+    // Reassigning `p` transfers ownership away — we can no longer track
+    // what the current value points at, so the throw on this path is
+    // not our rule's concern.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+        R"cpp(
+            struct Err { const char *what; };
+            void sink(int *);
+            void test(bool flag) {
+                int *p = new int(42);
+                if (flag) {
+                    sink(p);
+                    p = nullptr;
+                    throw Err{"bad"};
+                }
+                delete p;
             }
         )cpp");
 

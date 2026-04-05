@@ -49,6 +49,7 @@
 #include "../rules/ub/double_free_local.hpp"
 #include "../rules/ub/uninitialized_local.hpp"
 #include "../rules/ub/null_deref_after_check.hpp"
+#include "../rules/resource/leak_on_throw.hpp"
 
 namespace astharbor {
 
@@ -103,6 +104,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbDoubleFreeLocalRule>());
     registry.registerRule(std::make_unique<UbUninitializedLocalRule>());
     registry.registerRule(std::make_unique<UbNullDerefAfterCheckRule>());
+    registry.registerRule(std::make_unique<ResourceLeakOnThrowRule>());
 }
 
 } // namespace astharbor
