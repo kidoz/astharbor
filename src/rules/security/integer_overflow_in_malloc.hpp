@@ -64,20 +64,35 @@ class SecurityIntegerOverflowInMallocRule : public Rule {
         }
         const clang::Expr *lhs = Mul->getLHS()->IgnoreParenImpCasts();
         const clang::Expr *rhs = Mul->getRHS()->IgnoreParenImpCasts();
-        // Signed-operand multiplications are owned by
-        // security/signed-arith-in-alloc; skip to avoid duplicate
-        // findings on the common `malloc(int_var * sizeof(T))` shape.
-        if (lhs->getType()->isSignedIntegerType() ||
-            rhs->getType()->isSignedIntegerType()) {
+        // Guard against dependent-type / recovery-state expressions
+        // where `getType()` can return a null QualType. Dereferencing
+        // via operator-> would segfault on complex templated code
+        // (which is exactly what self-analysis of the analyzer itself
+        // hits on LLVM 18 CI).
+        const clang::QualType lhsType = lhs->getType();
+        const clang::QualType rhsType = rhs->getType();
+        if (lhsType.isNull() || rhsType.isNull()) {
             return;
         }
-        // Both-operands-constant multiplications are folded by the
-        // compiler and cannot overflow at runtime. Use EvaluateAsInt
-        // to match the convention of sibling const-folding rules.
+        // Classify each operand as constant or not. Constant sides
+        // (`4`, `sizeof(T)`, `M_CONST`) never cause runtime overflow
+        // on their own and never represent "signed user input" even
+        // when their type is `int`, so they should not poison the
+        // signed-operand check below.
         clang::Expr::EvalResult lhsEval;
         clang::Expr::EvalResult rhsEval;
-        if (lhs->EvaluateAsInt(lhsEval, *Result.Context) &&
-            rhs->EvaluateAsInt(rhsEval, *Result.Context)) {
+        const bool lhsConstant = lhs->EvaluateAsInt(lhsEval, *Result.Context);
+        const bool rhsConstant = rhs->EvaluateAsInt(rhsEval, *Result.Context);
+        if (lhsConstant && rhsConstant) {
+            return; // compile-time-foldable; cannot overflow at runtime
+        }
+        // Signed non-constant operands are owned by
+        // security/signed-arith-in-alloc, which flags the UB aspect.
+        // This rule covers the complementary case: a non-constant
+        // UNSIGNED multiplication whose wraparound produces an
+        // undersized buffer (defined behavior, still a bug).
+        if ((!lhsConstant && lhsType->isSignedIntegerType()) ||
+            (!rhsConstant && rhsType->isSignedIntegerType())) {
             return;
         }
 

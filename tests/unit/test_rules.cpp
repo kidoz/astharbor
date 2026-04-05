@@ -1702,6 +1702,25 @@ TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.IgnoresSignedOperand") {
     CHECK(result.findings.empty());
 }
 
+TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.DetectsUnsignedVarTimesIntLiteral") {
+    // Regression: the signed-operand filter must only skip when a
+    // NON-CONSTANT signed operand is present. A plain `4` literal is
+    // signed `int` but constant, so the multiplication
+    // `unsigned_n * 4` is still an unsigned runtime multiplication
+    // this rule is supposed to flag.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            void *test(unsigned long n) {
+                return malloc(n * 4);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
 TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.DetectsReallocWithVariableTimesSize") {
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),

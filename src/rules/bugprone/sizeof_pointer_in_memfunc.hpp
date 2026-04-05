@@ -72,8 +72,11 @@ class BugproneSizeofPointerInMemfuncRule : public Rule {
         // only arises when the buffer is a pointer at the use site —
         // either declared as a pointer, or a function parameter whose
         // declared array type decays to a pointer.
-        const bool isParameter = llvm::isa<clang::ParmVarDecl>(BufVar);
         const clang::QualType bufType = BufVar->getType();
+        if (bufType.isNull()) {
+            return;
+        }
+        const bool isParameter = llvm::isa<clang::ParmVarDecl>(BufVar);
         if (!bufType->isPointerType() && !(isParameter && bufType->isArrayType())) {
             return;
         }
