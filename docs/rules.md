@@ -67,6 +67,7 @@ pure AST matcher.
 | --- | --- | --- |
 | `bugprone/assignment-in-condition` | Assignments used inside `if`/`while`/`do`/`for` conditions. | CERT EXP45-C, `clang-tidy` `bugprone-assignment-in-if-condition` |
 | `bugprone/char-eof-comparison` | `getchar`/`getc`/`fgetc` return narrowed to `char` — loses EOF sentinel. | CERT FIO34-C, CWE-197 |
+| `bugprone/narrow-wide-char-mismatch` | Narrow-string function called with wide-char source or vice versa. | CERT STR38-C, CWE-704 |
 | `bugprone/identical-expressions` | The same variable on both sides of a comparison or arithmetic operator. | PVS-like expression sanity check |
 | `bugprone/sizeof-pointer-in-memfunc` | `memcpy`/`memmove`/etc. with `sizeof(ptr)` for the length. | CERT EXP01-C, CWE-467 |
 | `bugprone/suspicious-memset` | `memset` with `sizeof(pointer)` as the size. | `clang-tidy` `bugprone-sizeof-expression` |

@@ -7,6 +7,7 @@
 #include "../../src/rules/bugprone/swapped_arguments.hpp"
 #include "../../src/rules/bugprone/sizeof_pointer_in_memfunc.hpp"
 #include "../../src/rules/bugprone/char_eof_comparison.hpp"
+#include "../../src/rules/bugprone/narrow_wide_char_mismatch.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
@@ -2383,6 +2384,55 @@ TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresVirtualCallOutsideCtorDtor") {
                 virtual void init() {}
                 void doInit() { init(); }
             };
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/narrow-wide-char-mismatch (CERT STR38-C) ───────────────
+
+TEST_CASE("BugproneNarrowWideCharMismatchRuleTest.DetectsStrlenOnWideChar") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneNarrowWideCharMismatchRule>(),
+        R"cpp(
+            extern "C" unsigned long strlen(const char*);
+            void test() {
+                const wchar_t *ws = L"hello";
+                strlen((const char*)ws);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/narrow-wide-char-mismatch");
+}
+
+TEST_CASE("BugproneNarrowWideCharMismatchRuleTest.DetectsWcslenOnNarrowChar") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneNarrowWideCharMismatchRule>(),
+        R"cpp(
+            extern "C" unsigned long wcslen(const wchar_t*);
+            void test() {
+                const char *ns = "hello";
+                wcslen((const wchar_t*)ns);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("BugproneNarrowWideCharMismatchRuleTest.IgnoresCorrectUsage") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneNarrowWideCharMismatchRule>(),
+        R"cpp(
+            extern "C" unsigned long strlen(const char*);
+            extern "C" unsigned long wcslen(const wchar_t*);
+            void test() {
+                strlen("hello");
+                wcslen(L"hello");
+            }
         )cpp");
 
     REQUIRE(result.success);
