@@ -4,26 +4,19 @@
 
 namespace astharbor {
 
-/// Detects `malloc` / `realloc` calls whose size argument is a
-/// multiplication that could overflow `size_t` at runtime:
+/// Detects `malloc` / `realloc` calls whose size argument is an
+/// unsigned multiplication that can wrap `size_t` at runtime:
 ///
-///     void *p = malloc(n * sizeof(Thing));
-///     void *q = realloc(old, count * elem_size);
+///     void *p = malloc(n * sizeof(Thing));       // n is size_t
+///     void *q = realloc(old, count * elem_size); // both unsigned
 ///
-/// If `n` (or `count`) is attacker-controlled and large enough, the
-/// multiplication wraps, the allocator returns a buffer far smaller
-/// than the caller assumed, and the subsequent writes heap-overflow.
-/// This is a classic CVE shape — see CVE-2002-0391, CVE-2008-1687,
-/// CVE-2018-12020 and many others.
-///
-/// The rule flags any `*` sub-expression in the size argument where
-/// at least one operand is not a compile-time integer constant. The
-/// recommended fix is to use `calloc(n, sizeof(Thing))` (which is
-/// required to detect the overflow and return NULL) or to add an
-/// explicit `if (n > SIZE_MAX / sizeof(Thing)) …` guard before the
-/// allocation. Both-operands-constant multiplications are skipped
-/// because the compiler evaluates them at compile time and cannot
-/// overflow at runtime.
+/// Signed operands are deliberately skipped — those are owned by
+/// security/signed-arith-in-alloc, which flags the undefined-behavior
+/// aspect of signed overflow. Both-operands-constant multiplications
+/// are also skipped because the compiler folds them at compile time.
+/// The recommended fix is `calloc(n, sizeof(Thing))` (POSIX requires
+/// calloc to detect the overflow and return NULL) or an explicit
+/// `n > SIZE_MAX / sizeof(Thing)` guard.
 class SecurityIntegerOverflowInMallocRule : public Rule {
   public:
     std::string id() const override { return "security/integer-overflow-in-malloc"; }
@@ -42,15 +35,18 @@ class SecurityIntegerOverflowInMallocRule : public Rule {
         auto multiplication = ignoringParenImpCasts(
             binaryOperator(hasOperatorName("*")).bind("mul_expr"));
 
-        // malloc(size)
+        // malloc(size) — include unqualified, ::-prefixed, and std:: spellings
+        // for parity with security/signed-arith-in-alloc.
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName("malloc", "::std::malloc"))),
+            callExpr(callee(functionDecl(hasAnyName(
+                         "malloc", "::malloc", "std::malloc", "::std::malloc"))),
                      hasArgument(0, multiplication))
                 .bind("alloc_call"),
             this);
         // realloc(ptr, size)
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName("realloc", "::std::realloc"))),
+            callExpr(callee(functionDecl(hasAnyName(
+                         "realloc", "::realloc", "std::realloc", "::std::realloc"))),
                      hasArgument(1, multiplication))
                 .bind("alloc_call"),
             this);
@@ -66,12 +62,22 @@ class SecurityIntegerOverflowInMallocRule : public Rule {
         if (isInSystemHeader(Call->getExprLoc(), *Result.SourceManager)) {
             return;
         }
-        // Skip if both operands are compile-time integer constants —
-        // the compiler folds them and no runtime overflow is possible.
         const clang::Expr *lhs = Mul->getLHS()->IgnoreParenImpCasts();
         const clang::Expr *rhs = Mul->getRHS()->IgnoreParenImpCasts();
-        if (lhs->isIntegerConstantExpr(*Result.Context) &&
-            rhs->isIntegerConstantExpr(*Result.Context)) {
+        // Signed-operand multiplications are owned by
+        // security/signed-arith-in-alloc; skip to avoid duplicate
+        // findings on the common `malloc(int_var * sizeof(T))` shape.
+        if (lhs->getType()->isSignedIntegerType() ||
+            rhs->getType()->isSignedIntegerType()) {
+            return;
+        }
+        // Both-operands-constant multiplications are folded by the
+        // compiler and cannot overflow at runtime. Use EvaluateAsInt
+        // to match the convention of sibling const-folding rules.
+        clang::Expr::EvalResult lhsEval;
+        clang::Expr::EvalResult rhsEval;
+        if (lhs->EvaluateAsInt(lhsEval, *Result.Context) &&
+            rhs->EvaluateAsInt(rhsEval, *Result.Context)) {
             return;
         }
 

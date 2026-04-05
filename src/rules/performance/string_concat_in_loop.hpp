@@ -6,19 +6,14 @@ namespace astharbor {
 
 /// Detects `s = s + other` inside a loop where `s` is a `std::string`
 /// (or any `std::basic_string` specialization). Each iteration
-/// constructs a fresh temporary concatenation, then copy-assigns it
-/// back into `s` — the total work is quadratic in the final string
-/// length.
+/// constructs a fresh temporary concatenation and copy-assigns it
+/// back into `s` — quadratic work in the final string length.
 ///
-/// The fix is `s += other`, which goes through `basic_string::append`
-/// and grows the buffer geometrically, making the whole loop
-/// amortized linear.
-///
-/// Only the direct shape `s = s + X` is flagged (where one argument
-/// of the top-level `+` is `s` itself). Nested chains like
+/// Only the direct shape `s = s + X` is flagged (one argument of the
+/// top-level `+` must be `s` itself). Nested chains like
 /// `s = s + a + b` are not matched — programmers writing those tend
-/// to already know to use `+=`, and the matcher restriction keeps
-/// false positives at zero on the patterns we've seen.
+/// to already use `+=`, and the matcher restriction keeps false
+/// positives at zero on the patterns we've seen.
 class PerformanceStringConcatInLoopRule : public Rule {
   public:
     std::string id() const override { return "performance/string-concat-in-loop"; }
@@ -70,12 +65,10 @@ class PerformanceStringConcatInLoopRule : public Rule {
         if (isInSystemHeader(BadConcat->getExprLoc(), *Result.SourceManager)) {
             return;
         }
+        const std::string name = TargetVar->getNameAsString();
         emitFinding(BadConcat->getExprLoc(), *Result.SourceManager,
-                    "Quadratic string concatenation '" +
-                        TargetVar->getNameAsString() + " = " +
-                        TargetVar->getNameAsString() +
-                        " + …' inside a loop — use '" +
-                        TargetVar->getNameAsString() + " += …' instead");
+                    "Quadratic string concatenation '" + name + " = " + name +
+                        " + …' inside a loop — use '" + name + " += …' instead");
     }
 };
 

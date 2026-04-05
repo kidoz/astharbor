@@ -1681,9 +1681,25 @@ TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.DetectsMallocWithVariableTime
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) ==
-              ("security/integer-overflow-in-malloc"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "security/integer-overflow-in-malloc");
+}
+
+TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.IgnoresSignedOperand") {
+    // Signed-operand multiplications are owned by
+    // security/signed-arith-in-alloc; this rule stays silent to avoid
+    // duplicate findings on the same bug.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            void *test(int n) {
+                return malloc(n * sizeof(int));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
 }
 
 TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.DetectsReallocWithVariableTimesSize") {
@@ -1697,7 +1713,7 @@ TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.DetectsReallocWithVariableTim
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.IgnoresConstantTimesConstant") {
@@ -1844,7 +1860,26 @@ TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresNonStringType") {
 
 // ─── bugprone/sizeof-pointer-in-memfunc ────────────────────────────────
 
-TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemsetWithSizeofPtr") {
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemmoveWithSizeofPtr") {
+    // `memset` is covered by bugprone/suspicious-memset; this rule
+    // owns the rest of the mem* family.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memmove(void*, const void*, unsigned long);
+            void test(int *p, const int *q) {
+                memmove(p, q, sizeof(p));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/sizeof-pointer-in-memfunc");
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresMemsetHandledElsewhere") {
+    // memset's same-var sizeof case is owned by bugprone/suspicious-
+    // memset — this rule must stay silent to avoid duplicate findings.
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
         R"cpp(
@@ -1855,9 +1890,7 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemsetWithSizeofPtr") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) ==
-              ("bugprone/sizeof-pointer-in-memfunc"));
+    CHECK(result.findings.empty());
 }
 
 TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemcpyWithSizeofDst") {
@@ -1880,14 +1913,14 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsDecayedArrayParam") {
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
         R"cpp(
-            extern "C" void *memset(void*, int, unsigned long);
-            void clear(char buf[256]) {
-                memset(buf, 0, sizeof(buf));
+            extern "C" void *memcpy(void*, const void*, unsigned long);
+            void copy(char buf[256], const char *src) {
+                memcpy(buf, src, sizeof(buf));
             }
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofPointee") {
@@ -1895,9 +1928,9 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofPointee") {
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
         R"cpp(
-            extern "C" void *memset(void*, int, unsigned long);
-            void test(int *p) {
-                memset(p, 0, sizeof(*p));
+            extern "C" void *memcpy(void*, const void*, unsigned long);
+            void test(int *p, const int *q) {
+                memcpy(p, q, sizeof(*p));
             }
         )cpp");
 
@@ -1912,10 +1945,10 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofOfActualArray") {
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
         R"cpp(
-            extern "C" void *memset(void*, int, unsigned long);
-            void test() {
+            extern "C" void *memcpy(void*, const void*, unsigned long);
+            void test(const char *src) {
                 char buf[256];
-                memset(buf, 0, sizeof(buf));
+                memcpy(buf, src, sizeof(buf));
             }
         )cpp");
 
