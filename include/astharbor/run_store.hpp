@@ -95,11 +95,20 @@ class RunStore {
         for (const auto &[path, hash] : result.fileHashes) {
             hashes[path] = hash;
         }
+        llvm::json::Object dependencies;
+        for (const auto &[sourcePath, deps] : result.dependencies) {
+            llvm::json::Array depsArray;
+            for (const auto &dep : deps) {
+                depsArray.push_back(dep);
+            }
+            dependencies[sourcePath] = std::move(depsArray);
+        }
         llvm::json::Object root{
             {"runId", result.runId},
             {"success", result.success},
             {"findings", std::move(findingsArray)},
             {"fileHashes", std::move(hashes)},
+            {"dependencies", std::move(dependencies)},
         };
         std::string output;
         llvm::raw_string_ostream stream(output);
@@ -183,6 +192,22 @@ class RunStore {
                 if (auto value = entry.getSecond().getAsString()) {
                     result.fileHashes[entry.getFirst().str()] = value->str();
                 }
+            }
+        }
+        if (const auto *depsObj = object.getObject("dependencies")) {
+            for (const auto &entry : *depsObj) {
+                const llvm::json::Array *depsArray = entry.getSecond().getAsArray();
+                if (depsArray == nullptr) {
+                    continue;
+                }
+                std::vector<std::string> depsList;
+                depsList.reserve(depsArray->size());
+                for (const auto &depValue : *depsArray) {
+                    if (auto depString = depValue.getAsString()) {
+                        depsList.push_back(depString->str());
+                    }
+                }
+                result.dependencies[entry.getFirst().str()] = std::move(depsList);
             }
         }
         return result;

@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include "astharbor/result.hpp"
+#include "astharbor/run_store.hpp"
 #include "../../src/emitters/json_emitter.hpp"
 #include "../../src/emitters/sarif_emitter.hpp"
 
@@ -63,4 +66,50 @@ TEST(EmittersTest, SarifOutputsCorrectly) {
     EXPECT_NE(sarif.find("\"ruleId\": \"my-rule\""), std::string::npos);
     EXPECT_NE(sarif.find("Message with \\\"quotes\\\""), std::string::npos);
     EXPECT_NE(sarif.find("\"uri\": \"file://file.cpp\""), std::string::npos);
+}
+
+TEST(RunStoreTest, PersistsAndLoadsDependencies) {
+    // Round-trip a result with a non-empty dependencies map through
+    // RunStore::save / RunStore::load. Confirms that --incremental can
+    // carry per-TU header dependency lists across runs.
+    AnalysisResult original;
+    original.runId = "run-deps-test";
+    original.success = true;
+    original.fileHashes["/abs/main.cpp"] = "aaaaaaaaaaaaaaaa";
+    original.fileHashes["/abs/lib.hpp"] = "bbbbbbbbbbbbbbbb";
+    original.dependencies["/abs/main.cpp"] = {"/abs/lib.hpp"};
+
+    auto tempPath = std::filesystem::temp_directory_path() /
+                    "astharbor_runstore_deps_test.json";
+    std::filesystem::remove(tempPath);
+    ASSERT_TRUE(RunStore::save(original, tempPath));
+
+    auto loaded = RunStore::load(tempPath);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->runId, "run-deps-test");
+    EXPECT_EQ(loaded->fileHashes["/abs/main.cpp"], "aaaaaaaaaaaaaaaa");
+    EXPECT_EQ(loaded->fileHashes["/abs/lib.hpp"], "bbbbbbbbbbbbbbbb");
+    ASSERT_EQ(loaded->dependencies.size(), 1u);
+    const auto &deps = loaded->dependencies.at("/abs/main.cpp");
+    ASSERT_EQ(deps.size(), 1u);
+    EXPECT_EQ(deps[0], "/abs/lib.hpp");
+
+    std::filesystem::remove(tempPath);
+}
+
+TEST(RunStoreTest, LoadsRunWithoutDependenciesField) {
+    // Ensure backward compatibility: a run file written before the
+    // dependencies field existed must still round-trip through load.
+    auto tempPath = std::filesystem::temp_directory_path() /
+                    "astharbor_runstore_legacy_test.json";
+    {
+        std::ofstream out(tempPath);
+        out << R"({"runId": "legacy", "success": true,
+                  "findings": [], "fileHashes": {"/a.cpp": "deadbeef"}})";
+    }
+    auto loaded = RunStore::load(tempPath);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->runId, "legacy");
+    EXPECT_TRUE(loaded->dependencies.empty());
+    std::filesystem::remove(tempPath);
 }

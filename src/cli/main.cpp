@@ -22,6 +22,7 @@
 #include "astharbor/rule_registry.hpp"
 #include "astharbor/analyzer.hpp"
 #include "astharbor/config.hpp"
+#include "astharbor/dependency_collector.hpp"
 #include "astharbor/fix_applicator.hpp"
 #include "astharbor/run_store.hpp"
 #include "../emitters/json_emitter.hpp"
@@ -246,6 +247,22 @@ static bool ruleIsEnabled(const std::string &ruleId,
     return true;
 }
 
+/// Resolve a path to its canonical real-path form (following symlinks
+/// and normalizing `..` segments). The dependency collector stores
+/// paths resolved by Clang's SourceManager, which goes through the same
+/// real-path resolution; using the canonical form everywhere is the
+/// only way `--incremental` lookups can match both sides. Returns the
+/// input unchanged on filesystem errors so callers don't have to
+/// special-case missing files.
+static std::string canonicalizePath(const std::string &path) {
+    std::error_code ec;
+    auto canonical = std::filesystem::canonical(path, ec);
+    if (ec) {
+        return path;
+    }
+    return canonical.string();
+}
+
 /// Compute a stable 64-bit content hash of a file as a lowercase hex
 /// string. Uses LLVM's xxh3 (non-cryptographic but fast and stable across
 /// runs on the same architecture). Returns empty string on IO failure.
@@ -372,10 +389,19 @@ static void applyCompilerAdjusters(ClangTool &tool) {
     }
 }
 
+/// Result of running the analyzer on a chunk of source files: findings,
+/// the tool exit code, and — when the dependency collector is active —
+/// a per-source map of transitively-included user headers.
+struct AnalysisChunkResult {
+    std::vector<Finding> findings;
+    int exitCode = 0;
+    std::map<std::string, std::vector<std::string>> dependencies;
+};
+
 /// Run analysis on a single chunk of source files with a fresh RuleRegistry.
 /// Used as the per-worker function for parallel analysis; the sequential
 /// path just calls it once with all sources.
-static std::pair<std::vector<Finding>, int>
+static AnalysisChunkResult
 runAnalysisChunk(const std::vector<std::string> &chunkPaths,
                  CompilationDatabase &compilationDb,
                  const std::vector<std::string> &positivePatterns,
@@ -396,14 +422,16 @@ runAnalysisChunk(const std::vector<std::string> &chunkPaths,
         activeRules.push_back(rule.get());
     }
 
-    int toolExitCode = tool.run(newFrontendActionFactory(&finder).get());
+    std::map<std::string, std::vector<std::string>> dependencies;
+    MatchFinderWithDepsFactory factory(&finder, &dependencies);
+    int toolExitCode = tool.run(&factory);
 
     std::vector<Finding> findings;
     for (const Rule *rule : activeRules) {
         auto ruleFindings = rule->getFindings();
         findings.insert(findings.end(), ruleFindings.begin(), ruleFindings.end());
     }
-    return {std::move(findings), toolExitCode};
+    return {std::move(findings), toolExitCode, std::move(dependencies)};
 }
 
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
@@ -446,12 +474,23 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     }
 
     // Incremental mode: hash each source file and compare against the
-    // most recent saved run. Files whose hash matches are skipped and
-    // their findings carried forward from the prior run.
+    // most recent saved run. Files whose hash matches AND whose
+    // transitively-included user headers all still hash to their prior
+    // values are skipped and their findings carried forward from the
+    // prior run. Otherwise the TU is re-analyzed.
     std::vector<Finding> carriedFindings;
     std::map<std::string, std::string> currentHashes;
+    std::map<std::string, std::vector<std::string>> carriedDependencies;
     const bool incrementalMode = Incremental.getValue();
     if (incrementalMode) {
+        // Canonicalize source paths up-front so the hash-map keys match
+        // the real-path form the dependency collector writes out of the
+        // Clang SourceManager. Without this, a relative path on the CLI
+        // and an absolute path in the saved run would never compare
+        // equal and incremental would silently re-analyze everything.
+        for (auto &path : sourcePaths) {
+            path = canonicalizePath(path);
+        }
         for (const auto &path : sourcePaths) {
             currentHashes[path] = hashFileContent(path);
         }
@@ -480,20 +519,92 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
         if (newestPath) {
             if (auto priorRun = RunStore::load(*newestPath)) {
+                // Cache of current-on-disk hashes for dependency files, so
+                // several TUs sharing a common header only hash it once.
+                std::map<std::string, std::string> currentDepHashes;
+                auto currentHashOf = [&](const std::string &path) -> std::string {
+                    auto sourceIt = currentHashes.find(path);
+                    if (sourceIt != currentHashes.end()) {
+                        return sourceIt->second;
+                    }
+                    auto depIt = currentDepHashes.find(path);
+                    if (depIt != currentDepHashes.end()) {
+                        return depIt->second;
+                    }
+                    auto hash = hashFileContent(path);
+                    currentDepHashes[path] = hash;
+                    return hash;
+                };
+
                 std::set<std::string> unchangedFiles;
+                size_t invalidatedByDep = 0;
                 for (const auto &[path, currentHash] : currentHashes) {
                     if (currentHash.empty()) {
                         continue; // IO failure — re-analyze to be safe
                     }
-                    auto it = priorRun->fileHashes.find(path);
-                    if (it != priorRun->fileHashes.end() && it->second == currentHash) {
-                        unchangedFiles.insert(path);
+                    auto sourceHashIt = priorRun->fileHashes.find(path);
+                    if (sourceHashIt == priorRun->fileHashes.end() ||
+                        sourceHashIt->second != currentHash) {
+                        continue;
+                    }
+                    // Source matches; now check every recorded dependency.
+                    // A missing dependency entry in the prior run means
+                    // we have no dep info — fall back to same-file-only
+                    // invalidation for that TU.
+                    bool depsStable = true;
+                    auto depsIt = priorRun->dependencies.find(path);
+                    if (depsIt != priorRun->dependencies.end()) {
+                        for (const auto &depPath : depsIt->second) {
+                            auto priorDepHashIt = priorRun->fileHashes.find(depPath);
+                            if (priorDepHashIt == priorRun->fileHashes.end()) {
+                                depsStable = false;
+                                break;
+                            }
+                            auto currentDepHash = currentHashOf(depPath);
+                            if (currentDepHash.empty() ||
+                                currentDepHash != priorDepHashIt->second) {
+                                depsStable = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!depsStable) {
+                        ++invalidatedByDep;
+                        continue;
+                    }
+                    unchangedFiles.insert(path);
+                    // Preserve the prior dep list so the next incremental
+                    // run still knows what to watch for this TU, even if
+                    // we don't re-run the analyzer on it now.
+                    if (depsIt != priorRun->dependencies.end()) {
+                        carriedDependencies[path] = depsIt->second;
                     }
                 }
-                // Carry forward findings for unchanged files.
+                // Carry forward findings for unchanged files. Findings
+                // may record their file path in whatever form Clang
+                // reported it (often a short name relative to the
+                // compile command's directory), so we also match on
+                // basename against the canonical unchanged set. This
+                // can alias distinct files that share a basename, but
+                // the worst case is a false carry-forward that re-runs
+                // correctly on the next invocation.
+                std::set<std::string> unchangedBasenames;
+                for (const auto &path : unchangedFiles) {
+                    unchangedBasenames.insert(
+                        std::filesystem::path(path).filename().string());
+                }
                 for (const auto &finding : priorRun->findings) {
-                    if (unchangedFiles.count(finding.file) > 0) {
+                    if (unchangedFiles.count(finding.file) > 0 ||
+                        unchangedBasenames.count(
+                            std::filesystem::path(finding.file).filename().string()) > 0) {
                         carriedFindings.push_back(finding);
+                    }
+                }
+                // Merge current dep hashes into the working hash set so
+                // the next run has them even if we skipped every TU.
+                for (auto &entry : currentDepHashes) {
+                    if (!entry.second.empty()) {
+                        currentHashes.emplace(entry.first, std::move(entry.second));
                     }
                 }
                 // Drop unchanged files from the source list.
@@ -507,7 +618,8 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                 if (verbose) {
                     llvm::errs() << "[verbose] --incremental: " << unchangedFiles.size()
                                  << " of " << sourcePaths.size()
-                                 << " file(s) unchanged; carrying "
+                                 << " file(s) unchanged; " << invalidatedByDep
+                                 << " invalidated by header dep changes; carrying "
                                  << carriedFindings.size() << " finding(s) forward\n";
                 }
                 sourcePaths = std::move(remaining);
@@ -521,6 +633,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
             result.success = true;
             result.findings = std::move(carriedFindings);
             result.fileHashes = std::move(currentHashes);
+            result.dependencies = std::move(carriedDependencies);
             assignFindingIds(result);
             if (verbose) {
                 llvm::errs() << "[verbose] --incremental: nothing to re-analyze\n";
@@ -575,13 +688,15 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
 
     auto startTime = std::chrono::steady_clock::now();
     std::vector<Finding> allFindings;
+    std::map<std::string, std::vector<std::string>> collectedDependencies;
     int worstExitCode = 0;
 
     if (workerCount == 1) {
-        auto [findings, exitCode] =
-            runAnalysisChunk(sourcePaths, compilationDb, positivePatterns, negativePatterns);
-        allFindings = std::move(findings);
-        worstExitCode = exitCode;
+        auto chunkResult = runAnalysisChunk(sourcePaths, compilationDb, positivePatterns,
+                                             negativePatterns);
+        allFindings = std::move(chunkResult.findings);
+        worstExitCode = chunkResult.exitCode;
+        collectedDependencies = std::move(chunkResult.dependencies);
     } else {
         // Partition sources into round-robin chunks so individual large TUs
         // are spread across workers rather than concentrated in one.
@@ -590,7 +705,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
             chunks[index % workerCount].push_back(sourcePaths[index]);
         }
 
-        std::vector<std::future<std::pair<std::vector<Finding>, int>>> futures;
+        std::vector<std::future<AnalysisChunkResult>> futures;
         futures.reserve(chunks.size());
         for (auto &chunk : chunks) {
             if (chunk.empty()) {
@@ -602,12 +717,15 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
             }));
         }
         for (auto &future : futures) {
-            auto [findings, exitCode] = future.get();
+            auto chunkResult = future.get();
             allFindings.insert(allFindings.end(),
-                               std::make_move_iterator(findings.begin()),
-                               std::make_move_iterator(findings.end()));
-            if (exitCode > worstExitCode) {
-                worstExitCode = exitCode;
+                               std::make_move_iterator(chunkResult.findings.begin()),
+                               std::make_move_iterator(chunkResult.findings.end()));
+            for (auto &entry : chunkResult.dependencies) {
+                collectedDependencies[entry.first] = std::move(entry.second);
+            }
+            if (chunkResult.exitCode > worstExitCode) {
+                worstExitCode = chunkResult.exitCode;
             }
         }
         // Parallel execution can interleave findings from different workers;
@@ -697,14 +815,36 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     result.success = (worstExitCode == 0);
     result.findings = std::move(allFindings);
     // Record the hashes of everything we just analyzed (or carried over)
-    // so the next --incremental run can skip them.
+    // so the next --incremental run can skip them. Dependency lists
+    // (both freshly collected and carried over) are stored alongside,
+    // and every user-header dep gets its own content hash so the next
+    // run can detect changes to included files.
     if (incrementalMode) {
         result.fileHashes = std::move(currentHashes);
+        result.dependencies = std::move(carriedDependencies);
+        for (auto &entry : collectedDependencies) {
+            result.dependencies[entry.first] = std::move(entry.second);
+        }
     } else {
         for (const auto &path : sourcePaths) {
             auto hash = hashFileContent(path);
             if (!hash.empty()) {
                 result.fileHashes[path] = std::move(hash);
+            }
+        }
+        result.dependencies = std::move(collectedDependencies);
+    }
+    // Hash every header dependency so next-run comparisons have a
+    // baseline; cache by path to avoid hashing the same header twice
+    // when it is shared across TUs.
+    for (const auto &[sourcePath, deps] : result.dependencies) {
+        for (const auto &depPath : deps) {
+            if (result.fileHashes.count(depPath) > 0) {
+                continue;
+            }
+            auto hash = hashFileContent(depPath);
+            if (!hash.empty()) {
+                result.fileHashes[depPath] = std::move(hash);
             }
         }
     }
