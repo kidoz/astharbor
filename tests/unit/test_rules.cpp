@@ -6,6 +6,7 @@
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
 #include "../../src/rules/bugprone/swapped_arguments.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
+#include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
 #include "../../src/rules/portability/vla_in_cxx.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
@@ -1664,4 +1665,82 @@ TEST(BugproneSwappedArgumentsRuleTest, DetectsSwapAmongThreeArguments) {
 
     ASSERT_TRUE(result.success);
     ASSERT_EQ(result.findings.size(), 1u);
+}
+
+// ─── security/integer-overflow-in-malloc ───────────────────────────────
+
+TEST(SecurityIntegerOverflowInMallocRuleTest, DetectsMallocWithVariableTimesSizeof) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            void *test(unsigned long n) {
+                return malloc(n * sizeof(int));
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId,
+              "security/integer-overflow-in-malloc");
+}
+
+TEST(SecurityIntegerOverflowInMallocRuleTest, DetectsReallocWithVariableTimesSize) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *realloc(void*, unsigned long);
+            void *test(void *buf, unsigned long count, unsigned long elem) {
+                return realloc(buf, count * elem);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(SecurityIntegerOverflowInMallocRuleTest, IgnoresConstantTimesConstant) {
+    // Compile-time-foldable multiplication cannot overflow at runtime.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            void *test() {
+                return malloc(16 * 1024);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(SecurityIntegerOverflowInMallocRuleTest, IgnoresNonMultiplicationSize) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            void *test(unsigned long n) {
+                return malloc(n + 16);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(SecurityIntegerOverflowInMallocRuleTest, IgnoresCallocTwoArgForm) {
+    // calloc takes (count, size) as separate args, no multiplication in
+    // the AST to match — this is the recommended safe form the rule
+    // tells users to migrate TO.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityIntegerOverflowInMallocRule>(),
+        R"cpp(
+            extern "C" void *calloc(unsigned long, unsigned long);
+            void *test(unsigned long n) {
+                return calloc(n, sizeof(int));
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
 }

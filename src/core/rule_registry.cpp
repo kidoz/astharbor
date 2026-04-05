@@ -27,6 +27,7 @@
 #include "../rules/security/signed_arith_in_alloc.hpp"
 #include "../rules/security/large_stack_array.hpp"
 #include "../rules/security/integer_signedness_mismatch.hpp"
+#include "../rules/security/integer_overflow_in_malloc.hpp"
 #include "../rules/ub/missing_return_in_non_void.hpp"
 #include "../rules/ub/division_by_zero_literal.hpp"
 #include "../rules/ub/shift_by_negative.hpp"
@@ -84,6 +85,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<SecuritySignedArithInAllocRule>());
     registry.registerRule(std::make_unique<SecurityLargeStackArrayRule>());
     registry.registerRule(std::make_unique<SecurityIntegerSignednessMismatchRule>());
+    registry.registerRule(std::make_unique<SecurityIntegerOverflowInMallocRule>());
     registry.registerRule(std::make_unique<UbMissingReturnInNonVoidRule>());
     registry.registerRule(std::make_unique<UbDivisionByZeroLiteralRule>());
     registry.registerRule(std::make_unique<UbShiftByNegativeRule>());
