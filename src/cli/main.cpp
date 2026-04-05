@@ -195,23 +195,35 @@ parseChecksPattern(const std::string &input) {
 
 /// Return true if the rule with the given id should be enabled given the
 /// parsed --checks patterns.
+///
+/// Patterns are matched against both the canonical ASTHarbor id (e.g.
+/// `modernize/use-nullptr`) and the clang-tidy-style alias produced by
+/// replacing '/' with '-' (e.g. `modernize-use-nullptr`). This lets users
+/// migrating from clang-tidy keep their existing `.clang-tidy` Checks
+/// strings mostly intact.
 static bool ruleIsEnabled(const std::string &ruleId,
                           const std::vector<std::string> &positive,
                           const std::vector<std::string> &negative) {
-    bool enabled = positive.empty(); // start all-on iff no positive patterns
-    for (const auto &pattern : positive) {
-        if (ruleId.contains(pattern)) {
-            enabled = true;
-            break;
+    std::string aliasId = ruleId;
+    std::replace(aliasId.begin(), aliasId.end(), '/', '-');
+    auto matchesAny = [&](const std::vector<std::string> &patterns) {
+        for (const auto &pattern : patterns) {
+            if (ruleId.contains(pattern) || aliasId.contains(pattern)) {
+                return true;
+            }
         }
+        return false;
+    };
+
+    bool enabled = positive.empty(); // start all-on iff no positive patterns
+    if (!enabled && matchesAny(positive)) {
+        enabled = true;
     }
     if (!enabled) {
         return false;
     }
-    for (const auto &pattern : negative) {
-        if (ruleId.contains(pattern)) {
-            return false;
-        }
+    if (matchesAny(negative)) {
+        return false;
     }
     return true;
 }
