@@ -26,6 +26,12 @@
 #include "../rules/security/signed_arith_in_alloc.hpp"
 #include "../rules/security/large_stack_array.hpp"
 #include "../rules/security/integer_signedness_mismatch.hpp"
+#include "../rules/ub/missing_return_in_non_void.hpp"
+#include "../rules/ub/division_by_zero_literal.hpp"
+#include "../rules/ub/shift_by_negative.hpp"
+#include "../rules/ub/shift_past_bitwidth.hpp"
+#include "../rules/ub/static_array_oob_constant.hpp"
+#include "../rules/ub/delete_non_virtual_dtor.hpp"
 
 namespace astharbor {
 
@@ -57,6 +63,12 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<SecuritySignedArithInAllocRule>());
     registry.registerRule(std::make_unique<SecurityLargeStackArrayRule>());
     registry.registerRule(std::make_unique<SecurityIntegerSignednessMismatchRule>());
+    registry.registerRule(std::make_unique<UbMissingReturnInNonVoidRule>());
+    registry.registerRule(std::make_unique<UbDivisionByZeroLiteralRule>());
+    registry.registerRule(std::make_unique<UbShiftByNegativeRule>());
+    registry.registerRule(std::make_unique<UbShiftPastBitwidthRule>());
+    registry.registerRule(std::make_unique<UbStaticArrayOobConstantRule>());
+    registry.registerRule(std::make_unique<UbDeleteNonVirtualDtorRule>());
 }
 
 } // namespace astharbor
