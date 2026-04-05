@@ -33,6 +33,7 @@ pure AST matcher.
 | `ub/sizeof-array-parameter` | `sizeof(parm)` where `parm` is a decayed array parameter — returns pointer size. | CERT EXP01-C |
 | `ub/static-array-oob-constant` | Constant array index that is outside the declared bounds. | CERT ARR30-C, CWE-125 |
 | `ub/uninitialized-local` | **(CFG)** Read of a local scalar reachable on a path with no prior write. | CERT EXP33-C, CWE-457 |
+| `ub/use-after-free` | **(CFG)** Dereference / call-arg use of a local pointer after `free()` with no reassignment. | CERT MEM30-C, CWE-416 |
 | `ub/use-after-move` | **(CFG)** Use of a local variable after `std::move` with no intervening reassignment. | `clang-tidy` `bugprone-use-after-move` |
 
 ### `security/` — Security and CWE-mapped

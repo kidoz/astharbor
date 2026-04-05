@@ -19,6 +19,7 @@
 #include "../../src/rules/ub/move_of_const.hpp"
 #include "../../src/rules/ub/sizeof_array_parameter.hpp"
 #include "../../src/rules/ub/use_after_move.hpp"
+#include "../../src/rules/ub/use_after_free.hpp"
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
@@ -2073,6 +2074,121 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresUnrelatedFunction") {
             void test() {
                 char c = compute();
                 (void)c;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── ub/use-after-free (CFG, CERT MEM30-C) ────────────────────────────
+
+TEST_CASE("UbUseAfterFreeRuleTest.DetectsDerefAfterFree") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            int test() {
+                int *p = (int*)malloc(sizeof(int));
+                free(p);
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/use-after-free");
+}
+
+TEST_CASE("UbUseAfterFreeRuleTest.DetectsArrowMemberAfterFree") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            struct S { int field; };
+            int test() {
+                S *p = (S*)malloc(sizeof(S));
+                free(p);
+                return p->field;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbUseAfterFreeRuleTest.DetectsPassAsCallArgAfterFree") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            extern void sink(void*);
+            void test() {
+                void *p = malloc(16);
+                free(p);
+                sink(p);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbUseAfterFreeRuleTest.IgnoresReassignmentBeforeUse") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            int test() {
+                int *p = (int*)malloc(sizeof(int));
+                free(p);
+                p = (int*)malloc(sizeof(int));
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("UbUseAfterFreeRuleTest.IgnoresUseOnlyInUnreachableBranch") {
+    // The use of p lives inside a then-branch that ends in `return`
+    // before the free. On the path after `free(p)`, there are no
+    // dereferences of p.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            int test(bool flag) {
+                int *p = (int*)malloc(sizeof(int));
+                if (flag) {
+                    int v = *p;
+                    free(p);
+                    return v;
+                }
+                free(p);
+                return 0;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("UbUseAfterFreeRuleTest.IgnoresSingleFree") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterFreeRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            void test() {
+                int *p = (int*)malloc(sizeof(int));
+                free(p);
             }
         )cpp");
 
