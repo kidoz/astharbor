@@ -19,6 +19,14 @@ inline std::string generateRunId() {
     return stream.str();
 }
 
+inline void assignFindingIds(AnalysisResult &result) {
+    for (size_t index = 0; index < result.findings.size(); ++index) {
+        std::ostringstream stream;
+        stream << "finding-" << std::setw(4) << std::setfill('0') << index;
+        result.findings[index].findingId = stream.str();
+    }
+}
+
 class Analyzer {
   public:
     Analyzer(const RuleRegistry &registry, IEmitter &emitter);
