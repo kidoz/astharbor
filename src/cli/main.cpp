@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <iterator>
@@ -141,6 +142,7 @@ void print_help() {
     std::cout << "  doctor              Check toolchain health\n";
     std::cout << "  compare <file>      Compare clang vs gcc diagnostics on a file\n";
     std::cout << "  explain <rule-id>   Show full metadata for a rule\n";
+    std::cout << "  init                Scaffold .astharbor.yml in the current directory\n";
     std::cout << "\nAnalyze options:\n";
     std::cout << "  --checks=PATTERNS   Comma-separated rule-id substrings to enable;\n";
     std::cout << "                      prefix a pattern with '-' to disable matching rules\n";
@@ -1081,6 +1083,63 @@ int main(int argc, const char **argv) {
                           << "\n";
             }
         }
+        return 0;
+    }
+    if (command == "init") {
+        // Scaffold a new .astharbor.yml in the current directory. Refuses
+        // to overwrite an existing file unless --force is passed.
+        bool force = false;
+        for (int index = 2; index < argc; ++index) {
+            if (std::string(argv[index]) == "--force") {
+                force = true;
+            }
+        }
+        auto targetPath = std::filesystem::current_path() / ".astharbor.yml";
+        if (std::filesystem::exists(targetPath) && !force) {
+            llvm::errs() << "Error: " << targetPath.string()
+                         << " already exists. Pass --force to overwrite.\n";
+            return 2;
+        }
+        std::ofstream out(targetPath);
+        if (!out) {
+            llvm::errs() << "Error: cannot write " << targetPath.string() << "\n";
+            return 2;
+        }
+        out << "---\n"
+            << "# ASTHarbor project configuration.\n"
+            << "# See docs/cli.md and `astharbor rules` for the full rule catalog.\n"
+            << "#\n"
+            << "# Checks: comma-separated substring patterns. Prefix with '-' to disable.\n"
+            << "# Examples: 'modernize,ub' / 'security,-security/no-alloca'\n"
+            << "Checks: \"modernize,ub,bugprone,security\"\n"
+            << "\n"
+            << "# HeaderFilterRegex: only report findings whose file path matches this\n"
+            << "# regex (main source files are always reported regardless).\n"
+            << "# HeaderFilterRegex: \"^(src|include)/.*\\\\.(hpp|h)$\"\n"
+            << "\n"
+            << "# Jobs: parallel analysis workers. Leave unset to default to 1.\n"
+            << "# Jobs: 4\n"
+            << "\n"
+            << "# Std: language standard for single-file mode (no compile_commands.json).\n"
+            << "# Std: \"c++20\"\n"
+            << "\n"
+            << "# CompilerProfile: auto | clang | gcc. gcc enables -fgnu-keywords etc.\n"
+            << "# CompilerProfile: \"auto\"\n"
+            << "\n"
+            << "# Severity: per-rule overrides. Valid values: error, warning, note.\n"
+            << "# Severity:\n"
+            << "#   modernize/use-nullptr: error\n"
+            << "#   security/no-gets: error\n";
+        if (!out) {
+            llvm::errs() << "Error: failed to write " << targetPath.string() << "\n";
+            return 2;
+        }
+        std::cout << "Wrote " << targetPath.string() << "\n"
+                  << "Next steps:\n"
+                  << "  1. Edit the file to scope Checks/Severity for your project.\n"
+                  << "  2. Run `astharbor rules` to list all available rule ids.\n"
+                  << "  3. Run `astharbor analyze <path> --` from any directory under "
+                  << "this one — the config is discovered automatically.\n";
         return 0;
     }
     if (command == "explain") {
