@@ -1,12 +1,13 @@
 project('ASTHarbor', ['cpp', 'c'],
         version : '1.0.0',
+        meson_version : '>= 1.1.0',
         default_options : ['warning_level=3', 'werror=true', 'cpp_std=c++23'])
 
 cpp_compiler = meson.get_compiler('cpp')
 
 llvm_dep = dependency('llvm', version : '>=14.0', required : true)
 
-llvm_config = find_program('llvm-config', required : true)
+llvm_config = find_program('llvm-config', 'llvm-config-23', 'llvm-config-22', 'llvm-config-21', 'llvm-config-20', 'llvm-config-19', 'llvm-config-18', 'llvm-config-17', 'llvm-config-16', 'llvm-config-15', 'llvm-config-14', required : true)
 llvm_libdir = run_command(llvm_config, '--libdir', check : true).stdout().strip()
 llvm_includedir = run_command(llvm_config, '--includedir', check : true).stdout().strip()
 
