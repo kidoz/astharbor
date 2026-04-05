@@ -17,6 +17,7 @@
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
+#include "../../src/rules/ub/dangling_reference.hpp"
 #include "../../src/rules/resource/leak_on_throw.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
@@ -1451,6 +1452,109 @@ TEST(ResourceLeakOnThrowRuleTest, IgnoresReassignmentBeforeThrow) {
                     throw Err{"bad"};
                 }
                 delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── dangling-reference (Tier 2) ───────────────────────────────────────
+
+TEST(UbDanglingReferenceRuleTest, DetectsReferenceReturnOfLocal) {
+    // `const int&` avoids Clang's hard error on binding a non-const
+    // reference to a function-local lvalue while still matching the
+    // rule's `returns(referenceType())` predicate.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            const int& test() {
+                int x = 42;
+                return x;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/dangling-reference");
+}
+
+TEST(UbDanglingReferenceRuleTest, DetectsPointerReturnOfAddressOfLocal) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            int* test() {
+                int x = 42;
+                return &x;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbDanglingReferenceRuleTest, DetectsPointerReturnOfArrayDecay) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            char* test() {
+                char buf[16] = "hello";
+                return buf;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbDanglingReferenceRuleTest, DetectsReferenceReturnOfByValueParam) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            const int& test(int x) {
+                return x;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbDanglingReferenceRuleTest, IgnoresReferenceReturnOfReferenceParam) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            int& test(int& x) {
+                return x;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbDanglingReferenceRuleTest, IgnoresStaticLocal) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            int& test() {
+                static int x = 42;
+                return x;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbDanglingReferenceRuleTest, IgnoresValueReturn) {
+    // Copy-by-value is fine even if the source is a local.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDanglingReferenceRule>(),
+        R"cpp(
+            int test() {
+                int x = 42;
+                return x;
             }
         )cpp");
 
