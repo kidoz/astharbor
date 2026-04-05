@@ -49,8 +49,8 @@ TEST_CASE("BugproneAssignmentInConditionRuleTest.DetectsAssignmentInsideIfCondit
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("bugprone/assignment-in-condition"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/assignment-in-condition");
 }
 
 TEST_CASE("BugproneAssignmentInConditionRuleTest.IgnoresEqualityComparisons") {
@@ -82,8 +82,8 @@ TEST_CASE("BugproneSuspiciousSemicolonRuleTest.DetectsEmptyIfBody") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("bugprone/suspicious-semicolon"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/suspicious-semicolon");
 }
 
 TEST_CASE("BugproneSuspiciousSemicolonRuleTest.IgnoresNonEmptyIfBody") {
@@ -119,8 +119,8 @@ TEST_CASE("BugproneUnsafeMemoryOperationRuleTest.DetectsMemsetOnNonTrivialType")
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("bugprone/unsafe-memory-operation"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/unsafe-memory-operation");
 }
 
 TEST_CASE("BugproneUnsafeMemoryOperationRuleTest.IgnoresMemcpyOnTrivialType") {
@@ -154,8 +154,8 @@ TEST_CASE("UbMissingReturnInNonVoidRuleTest.DetectsFunctionWithNoReturn") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/missing-return-in-non-void"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/missing-return-in-non-void");
 }
 
 TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresFunctionWithReturn") {
@@ -207,8 +207,8 @@ TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsDivisionByLiteralZero") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/division-by-zero-literal"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/division-by-zero-literal");
 }
 
 TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsModuloByLiteralZero") {
@@ -221,7 +221,7 @@ TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsModuloByLiteralZero") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbDivisionByZeroLiteralRuleTest.IgnoresNonZeroDivisor") {
@@ -247,8 +247,8 @@ TEST_CASE("UbShiftByNegativeRuleTest.DetectsShiftByNegativeLiteral") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/shift-by-negative"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/shift-by-negative");
 }
 
 TEST_CASE("UbShiftByNegativeRuleTest.IgnoresPositiveShift") {
@@ -274,8 +274,8 @@ TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftEqualToBitwidth") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/shift-past-bitwidth"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/shift-past-bitwidth");
 }
 
 TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftGreaterThanBitwidth") {
@@ -288,7 +288,7 @@ TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftGreaterThanBitwidth") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbShiftPastBitwidthRuleTest.IgnoresValidShift") {
@@ -315,8 +315,8 @@ TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexPastEnd") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/static-array-oob-constant"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/static-array-oob-constant");
 }
 
 TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexEqualToSize") {
@@ -330,7 +330,7 @@ TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexEqualToSize") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbStaticArrayOobConstantRuleTest.IgnoresValidIndex") {
@@ -362,8 +362,8 @@ TEST_CASE("UbDeleteNonVirtualDtorRuleTest.DetectsPolymorphicClassWithNonVirtualD
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/delete-non-virtual-dtor"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/delete-non-virtual-dtor");
 }
 
 TEST_CASE("UbDeleteNonVirtualDtorRuleTest.IgnoresVirtualDestructor") {
@@ -414,11 +414,11 @@ TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewArrayScalarDelete") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/new-delete-array-mismatch"));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().safety) == ("safe"));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("delete[]"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/new-delete-array-mismatch");
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().safety == "safe");
+    CHECK(result.findings.front().fixes.front().replacementText == "delete[]");
 }
 
 TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewScalarArrayDelete") {
@@ -432,7 +432,7 @@ TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewScalarArrayDelete") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbNewDeleteArrayMismatchRuleTest.IgnoresMatchedForms") {
@@ -466,8 +466,8 @@ TEST_CASE("UbPointerArithmeticOnPolymorphicRuleTest.DetectsIncrement") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) >= (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/pointer-arithmetic-on-polymorphic"));
+    REQUIRE(result.findings.size() >= 1u);
+    CHECK(result.findings.front().ruleId == "ub/pointer-arithmetic-on-polymorphic");
 }
 
 TEST_CASE("UbPointerArithmeticOnPolymorphicRuleTest.DetectsSubscript") {
@@ -486,7 +486,7 @@ TEST_CASE("UbPointerArithmeticOnPolymorphicRuleTest.DetectsSubscript") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) >= (1u));
+    REQUIRE(result.findings.size() >= 1u);
 }
 
 TEST_CASE("UbPointerArithmeticOnPolymorphicRuleTest.IgnoresNonPolymorphic") {
@@ -515,8 +515,8 @@ TEST_CASE("UbImplicitWideningMultiplicationRuleTest.DetectsIntToLongLongWiden") 
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/implicit-widening-multiplication"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/implicit-widening-multiplication");
 }
 
 TEST_CASE("UbImplicitWideningMultiplicationRuleTest.IgnoresSameWidthMultiplication") {
@@ -557,8 +557,8 @@ TEST_CASE("UbNoreturnFunctionReturnsRuleTest.DetectsReturnInNoreturnFunction") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/noreturn-function-returns"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/noreturn-function-returns");
 }
 
 TEST_CASE("UbNoreturnFunctionReturnsRuleTest.IgnoresNormalFunction") {
@@ -584,8 +584,8 @@ TEST_CASE("UbReinterpretCastTypePunningRuleTest.DetectsFloatToIntCast") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/reinterpret-cast-type-punning"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/reinterpret-cast-type-punning");
 }
 
 TEST_CASE("UbReinterpretCastTypePunningRuleTest.IgnoresCastToCharPointer") {
@@ -636,12 +636,12 @@ TEST_CASE("ModernizeUseOverrideRuleTest.ProducesOverrideAutofix") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (2u));
+    REQUIRE(result.findings.size() == 2u);
     for (const auto &finding : result.findings) {
-        REQUIRE((finding.fixes.size()) == (1u));
-        CHECK((finding.fixes.front().safety) == ("safe"));
-        CHECK((finding.fixes.front().replacementText) == (" override"));
-        CHECK((finding.fixes.front().length) == (0));
+        REQUIRE(finding.fixes.size() == 1u);
+        CHECK(finding.fixes.front().safety == "safe");
+        CHECK(finding.fixes.front().replacementText == " override");
+        CHECK(finding.fixes.front().length == 0);
     }
 }
 
@@ -660,10 +660,10 @@ TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.ProducesEmptyAutofixForEq") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().safety) == ("safe"));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("c.empty()"));
+    REQUIRE(result.findings.size() == 1u);
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().safety == "safe");
+    CHECK(result.findings.front().fixes.front().replacementText == "c.empty()");
 }
 
 TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.ProducesNotEmptyAutofixForNe") {
@@ -681,9 +681,9 @@ TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.ProducesNotEmptyAutofixForNe") 
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("!c.empty()"));
+    REQUIRE(result.findings.size() == 1u);
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().replacementText == "!c.empty()");
 }
 
 TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.HandlesReversedOperands") {
@@ -701,9 +701,9 @@ TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.HandlesReversedOperands") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("!c.empty()"));
+    REQUIRE(result.findings.size() == 1u);
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().replacementText == "!c.empty()");
 }
 
 // ─── Missing initial rule coverage ─────────────────────────────────
@@ -716,11 +716,11 @@ TEST_CASE("ReadabilityUseUsingAliasRuleTest.DetectsSimpleTypedef") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("readability/use-using-alias"));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().safety) == ("review"));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("using MyInt = int"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "readability/use-using-alias");
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().safety == "review");
+    CHECK(result.findings.front().fixes.front().replacementText == "using MyInt = int");
 }
 
 TEST_CASE("ReadabilityUseUsingAliasRuleTest.NoAutofixForFunctionPointerTypedef") {
@@ -731,7 +731,7 @@ TEST_CASE("ReadabilityUseUsingAliasRuleTest.NoAutofixForFunctionPointerTypedef")
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
     // Complex type — diagnostic only, no autofix.
     CHECK(result.findings.front().fixes.empty());
 }
@@ -747,8 +747,8 @@ TEST_CASE("PortabilityVlaInCxxRuleTest.DetectsVlaInCpp") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("portability/vla-in-cxx"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "portability/vla-in-cxx");
 }
 
 TEST_CASE("PortabilityVlaInCxxRuleTest.IgnoresFixedSizeArray") {
@@ -777,7 +777,7 @@ TEST_CASE("BestPracticeNoRawNewDeleteRuleTest.DetectsRawNewAndDelete") {
 
     REQUIRE(result.success);
     // Expect both the new and delete to be flagged.
-    REQUIRE((result.findings.size()) == (2u));
+    REQUIRE(result.findings.size() == 2u);
 }
 
 TEST_CASE("BestPracticeNoRawNewDeleteRuleTest.IgnoresPlacementNew") {
@@ -808,11 +808,10 @@ TEST_CASE("BestPracticeExplicitSingleArgCtorRuleTest.DetectsImplicitSingleArgCto
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) ==
-              ("best-practice/explicit-single-arg-ctor"));
-    REQUIRE((result.findings.front().fixes.size()) == (1u));
-    CHECK((result.findings.front().fixes.front().replacementText) == ("explicit "));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "best-practice/explicit-single-arg-ctor");
+    REQUIRE(result.findings.front().fixes.size() == 1u);
+    CHECK(result.findings.front().fixes.front().replacementText == "explicit ");
 }
 
 TEST_CASE("BestPracticeExplicitSingleArgCtorRuleTest.IgnoresExplicitCtor") {
@@ -855,8 +854,8 @@ TEST_CASE("UbCStyleCastPointerPunningRuleTest.DetectsFloatToIntPunning") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/c-style-cast-pointer-punning"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/c-style-cast-pointer-punning");
 }
 
 TEST_CASE("UbCStyleCastPointerPunningRuleTest.IgnoresCastToChar") {
@@ -882,8 +881,8 @@ TEST_CASE("UbCastingThroughVoidRuleTest.DetectsStaticCastChain") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) >= (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/casting-through-void"));
+    REQUIRE(result.findings.size() >= 1u);
+    CHECK(result.findings.front().ruleId == "ub/casting-through-void");
 }
 
 TEST_CASE("UbCastingThroughVoidRuleTest.IgnoresSingleStaticCast") {
@@ -916,8 +915,8 @@ TEST_CASE("UbMoveOfConstRuleTest.DetectsMoveOfConstLvalue") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/move-of-const"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/move-of-const");
 }
 
 TEST_CASE("UbMoveOfConstRuleTest.IgnoresMoveOfNonConstLvalue") {
@@ -949,8 +948,8 @@ TEST_CASE("UbSizeofArrayParameterRuleTest.DetectsSizeofArrayParam") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/sizeof-array-parameter"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/sizeof-array-parameter");
 }
 
 TEST_CASE("UbSizeofArrayParameterRuleTest.IgnoresSizeofLocalArray") {
@@ -987,8 +986,8 @@ TEST_CASE("UbUseAfterMoveRuleTest.DetectsUseAfterMove") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/use-after-move"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/use-after-move");
 }
 
 TEST_CASE("UbUseAfterMoveRuleTest.IgnoresReassignmentBeforeReuse") {
@@ -1072,8 +1071,8 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsSameVariableDeletedTwice") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/double-free-local"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/double-free-local");
 }
 
 TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresReassignmentBetweenDeletes") {
@@ -1146,7 +1145,7 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsDeleteInBothBranchesAfterMerge") {
 
     REQUIRE(result.success);
     REQUIRE(!(result.findings.empty()));
-    CHECK((result.findings.front().ruleId) == ("ub/double-free-local"));
+    CHECK(result.findings.front().ruleId == "ub/double-free-local");
 }
 
 // ─── uninitialized-local (Tier 2) ──────────────────────────────────────
@@ -1162,8 +1161,8 @@ TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadBeforeWrite") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/uninitialized-local"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/uninitialized-local");
 }
 
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteBeforeRead") {
@@ -1229,7 +1228,7 @@ TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadOnBranchMissingInit") {
 
     REQUIRE(result.success);
     REQUIRE(!(result.findings.empty()));
-    CHECK((result.findings.front().ruleId) == ("ub/uninitialized-local"));
+    CHECK(result.findings.front().ruleId == "ub/uninitialized-local");
 }
 
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteInAllBranches") {
@@ -1269,8 +1268,8 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsArrowDerefInNullBranch") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/null-deref-after-check"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/null-deref-after-check");
 }
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsStarDerefInNotCheck") {
@@ -1286,7 +1285,7 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsStarDerefInNotCheck") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsSubscriptInNullBranch") {
@@ -1302,7 +1301,7 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsSubscriptInNullBranch") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresEarlyReturnGuard") {
@@ -1379,8 +1378,8 @@ TEST_CASE("ResourceLeakOnThrowRuleTest.DetectsLeakWhenThrowFollowsNew") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("resource/leak-on-throw"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "resource/leak-on-throw");
 }
 
 TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresDeleteBeforeThrow") {
@@ -1478,8 +1477,8 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfLocal") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("ub/dangling-reference"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/dangling-reference");
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfAddressOfLocal") {
@@ -1493,7 +1492,7 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfAddressOfLocal") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfArrayDecay") {
@@ -1507,7 +1506,7 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfArrayDecay") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfByValueParam") {
@@ -1520,7 +1519,7 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfByValueParam") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.IgnoresReferenceReturnOfReferenceParam") {
@@ -1580,8 +1579,8 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.DetectsSwappedDstSrc") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("bugprone/swapped-arguments"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/swapped-arguments");
 }
 
 TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresCorrectArgumentOrder") {
@@ -1665,7 +1664,7 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.DetectsSwapAmongThreeArguments") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 // ─── security/integer-overflow-in-malloc ───────────────────────────────
@@ -1798,8 +1797,8 @@ TEST_CASE("PerformanceStringConcatInLoopRuleTest.DetectsForLoopConcat") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
-    CHECK((result.findings.front().ruleId) == ("performance/string-concat-in-loop"));
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "performance/string-concat-in-loop");
 }
 
 TEST_CASE("PerformanceStringConcatInLoopRuleTest.DetectsWhileLoopConcat") {
@@ -1818,7 +1817,7 @@ TEST_CASE("PerformanceStringConcatInLoopRuleTest.DetectsWhileLoopConcat") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresPlusEquals") {
@@ -1923,7 +1922,7 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemcpyWithSizeofDst") {
         )cpp");
 
     REQUIRE(result.success);
-    REQUIRE((result.findings.size()) == (1u));
+    REQUIRE(result.findings.size() == 1u);
 }
 
 TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsDecayedArrayParam") {

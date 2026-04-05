@@ -38,12 +38,12 @@ TEST_CASE("EmittersTest.JsonEscapesStrings") {
     emitter.emit(res, os);
     std::string json = os.str();
 
-    CHECK((json.find("\"runId\": \"test-run\"")) != (std::string::npos));
-    CHECK((json.find("\\\"quotes\\\"")) != (std::string::npos));
-    CHECK((json.find("C:\\\\path\\\\to\\\\file.cpp")) != (std::string::npos));
-    CHECK((json.find("\"severity\": \"warning\"")) != (std::string::npos));
-    CHECK((json.find("\"category\": \"test\"")) != (std::string::npos));
-    CHECK((json.find("\"fixes\": [")) != (std::string::npos));
+    CHECK(json.find("\"runId\": \"test-run\"") != std::string::npos);
+    CHECK(json.find("\\\"quotes\\\"") != std::string::npos);
+    CHECK(json.find("C:\\\\path\\\\to\\\\file.cpp") != std::string::npos);
+    CHECK(json.find("\"severity\": \"warning\"") != std::string::npos);
+    CHECK(json.find("\"category\": \"test\"") != std::string::npos);
+    CHECK(json.find("\"fixes\": [") != std::string::npos);
 }
 
 TEST_CASE("EmittersTest.SarifOutputsCorrectly") {
@@ -62,10 +62,10 @@ TEST_CASE("EmittersTest.SarifOutputsCorrectly") {
     emitter.emit(res, os);
     std::string sarif = os.str();
 
-    CHECK((sarif.find("\"version\": \"2.1.0\"")) != (std::string::npos));
-    CHECK((sarif.find("\"ruleId\": \"my-rule\"")) != (std::string::npos));
-    CHECK((sarif.find("Message with \\\"quotes\\\"")) != (std::string::npos));
-    CHECK((sarif.find("\"uri\": \"file://file.cpp\"")) != (std::string::npos));
+    CHECK(sarif.find("\"version\": \"2.1.0\"") != std::string::npos);
+    CHECK(sarif.find("\"ruleId\": \"my-rule\"") != std::string::npos);
+    CHECK(sarif.find("Message with \\\"quotes\\\"") != std::string::npos);
+    CHECK(sarif.find("\"uri\": \"file://file.cpp\"") != std::string::npos);
 }
 
 TEST_CASE("RunStoreTest.PersistsAndLoadsDependencies") {
@@ -86,13 +86,13 @@ TEST_CASE("RunStoreTest.PersistsAndLoadsDependencies") {
 
     auto loaded = RunStore::load(tempPath);
     REQUIRE(loaded.has_value());
-    CHECK((loaded->runId) == ("run-deps-test"));
-    CHECK((loaded->fileHashes["/abs/main.cpp"]) == ("aaaaaaaaaaaaaaaa"));
-    CHECK((loaded->fileHashes["/abs/lib.hpp"]) == ("bbbbbbbbbbbbbbbb"));
-    REQUIRE((loaded->dependencies.size()) == (1u));
+    CHECK(loaded->runId == "run-deps-test");
+    CHECK(loaded->fileHashes["/abs/main.cpp"] == "aaaaaaaaaaaaaaaa");
+    CHECK(loaded->fileHashes["/abs/lib.hpp"] == "bbbbbbbbbbbbbbbb");
+    REQUIRE(loaded->dependencies.size() == 1u);
     const auto &deps = loaded->dependencies.at("/abs/main.cpp");
-    REQUIRE((deps.size()) == (1u));
-    CHECK((deps[0]) == ("/abs/lib.hpp"));
+    REQUIRE(deps.size() == 1u);
+    CHECK(deps[0] == "/abs/lib.hpp");
 
     std::filesystem::remove(tempPath);
 }
@@ -109,7 +109,7 @@ TEST_CASE("RunStoreTest.LoadsRunWithoutDependenciesField") {
     }
     auto loaded = RunStore::load(tempPath);
     REQUIRE(loaded.has_value());
-    CHECK((loaded->runId) == ("legacy"));
+    CHECK(loaded->runId == "legacy");
     CHECK(loaded->dependencies.empty());
     std::filesystem::remove(tempPath);
 }
