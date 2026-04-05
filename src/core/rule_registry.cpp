@@ -46,6 +46,7 @@
 #include "../rules/ub/move_of_const.hpp"
 #include "../rules/ub/sizeof_array_parameter.hpp"
 #include "../rules/ub/use_after_move.hpp"
+#include "../rules/ub/double_free_local.hpp"
 
 namespace astharbor {
 
@@ -97,6 +98,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbMoveOfConstRule>());
     registry.registerRule(std::make_unique<UbSizeofArrayParameterRule>());
     registry.registerRule(std::make_unique<UbUseAfterMoveRule>());
+    registry.registerRule(std::make_unique<UbDoubleFreeLocalRule>());
 }
 
 } // namespace astharbor

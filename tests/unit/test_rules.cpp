@@ -14,6 +14,7 @@
 #include "../../src/rules/ub/move_of_const.hpp"
 #include "../../src/rules/ub/sizeof_array_parameter.hpp"
 #include "../../src/rules/ub/use_after_move.hpp"
+#include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -1018,6 +1019,54 @@ TEST(UbUseAfterMoveRuleTest, IgnoresMoveWithNoSubsequentUse) {
                 Widget w{42};
                 Widget b(std::move(w));
                 (void)b;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── double-free-local (Tier 2) ────────────────────────────────────────
+
+TEST(UbDoubleFreeLocalRuleTest, DetectsSameVariableDeletedTwice) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/double-free-local");
+}
+
+TEST(UbDoubleFreeLocalRuleTest, IgnoresReassignmentBetweenDeletes) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
+                p = new int(100);
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbDoubleFreeLocalRuleTest, IgnoresSingleDelete) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
             }
         )cpp");
 
