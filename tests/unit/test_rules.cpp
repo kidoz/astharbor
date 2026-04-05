@@ -7,6 +7,7 @@
 #include "../../src/rules/bugprone/swapped_arguments.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
+#include "../../src/rules/performance/string_concat_in_loop.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
 #include "../../src/rules/portability/vla_in_cxx.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
@@ -1737,6 +1738,102 @@ TEST_CASE("SecurityIntegerOverflowInMallocRuleTest.IgnoresCallocTwoArgForm") {
             extern "C" void *calloc(unsigned long, unsigned long);
             void *test(unsigned long n) {
                 return calloc(n, sizeof(int));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── performance/string-concat-in-loop ─────────────────────────────────
+
+TEST_CASE("PerformanceStringConcatInLoopRuleTest.DetectsForLoopConcat") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformanceStringConcatInLoopRule>(),
+        R"cpp(
+            #include <string>
+            std::string join(const char* const* parts, int n) {
+                std::string s;
+                for (int i = 0; i < n; ++i) {
+                    s = s + parts[i];
+                }
+                return s;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE((result.findings.size()) == (1u));
+    CHECK((result.findings.front().ruleId) == ("performance/string-concat-in-loop"));
+}
+
+TEST_CASE("PerformanceStringConcatInLoopRuleTest.DetectsWhileLoopConcat") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformanceStringConcatInLoopRule>(),
+        R"cpp(
+            #include <string>
+            std::string build(int n) {
+                std::string s;
+                while (n > 0) {
+                    s = s + "x";
+                    --n;
+                }
+                return s;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE((result.findings.size()) == (1u));
+}
+
+TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresPlusEquals") {
+    // s += other uses basic_string::append which is amortized linear —
+    // this is the recommended fix.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformanceStringConcatInLoopRule>(),
+        R"cpp(
+            #include <string>
+            std::string join(const char* const* parts, int n) {
+                std::string s;
+                for (int i = 0; i < n; ++i) {
+                    s += parts[i];
+                }
+                return s;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresConcatOutsideLoop") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformanceStringConcatInLoopRule>(),
+        R"cpp(
+            #include <string>
+            std::string build() {
+                std::string s = "a";
+                s = s + "b";
+                return s;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresNonStringType") {
+    // `int` has no `operator+` / `operator=` overload — the matcher is
+    // scoped to `cxxOperatorCallExpr` which only matches user-defined
+    // operators, so built-in types never fire.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformanceStringConcatInLoopRule>(),
+        R"cpp(
+            int sum(int n) {
+                int s = 0;
+                for (int i = 0; i < n; ++i) {
+                    s = s + i;
+                }
+                return s;
             }
         )cpp");
 

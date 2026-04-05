@@ -8,6 +8,7 @@
 #include "../rules/modernize/use_nullptr.hpp"
 #include "../rules/modernize/use_override.hpp"
 #include "../rules/performance/for_loop_copy.hpp"
+#include "../rules/performance/string_concat_in_loop.hpp"
 #include "../rules/readability/const_return_type.hpp"
 #include "../rules/readability/container_size_empty.hpp"
 #include "../rules/security/no_gets.hpp"
@@ -62,6 +63,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<BugproneAssignmentInConditionRule>());
     registry.registerRule(std::make_unique<ReadabilityConstReturnTypeRule>());
     registry.registerRule(std::make_unique<PerformanceForLoopCopyRule>());
+    registry.registerRule(std::make_unique<PerformanceStringConcatInLoopRule>());
     registry.registerRule(std::make_unique<ReadabilityContainerSizeEmptyRule>());
     registry.registerRule(std::make_unique<BugproneIdenticalExpressionsRule>());
     registry.registerRule(std::make_unique<BugproneSuspiciousMemsetRule>());
