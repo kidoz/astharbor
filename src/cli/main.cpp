@@ -389,13 +389,19 @@ static void applyCompilerAdjusters(ClangTool &tool) {
     }
 }
 
-/// Result of running the analyzer on a chunk of source files: findings,
-/// the tool exit code, and — when the dependency collector is active —
-/// a per-source map of transitively-included user headers.
+/// Result of running the analyzer on a chunk of source files.
 struct AnalysisChunkResult {
     std::vector<Finding> findings;
     int exitCode = 0;
+    /// Per-source list of transitively-included user-header paths.
     std::map<std::string, std::vector<std::string>> dependencies;
+    /// Content hashes of header files discovered during dep collection.
+    /// Computed inside the worker so the hashing I/O runs in parallel
+    /// with other workers rather than serially on the main thread after
+    /// the join. Duplicates across workers are tolerated — the merge
+    /// step on the main thread deduplicates by path and the values
+    /// agree because they hash the same file content.
+    std::map<std::string, std::string> depHashes;
 };
 
 /// Run analysis on a single chunk of source files with a fresh RuleRegistry.
@@ -431,7 +437,26 @@ runAnalysisChunk(const std::vector<std::string> &chunkPaths,
         auto ruleFindings = rule->getFindings();
         findings.insert(findings.end(), ruleFindings.begin(), ruleFindings.end());
     }
-    return {std::move(findings), toolExitCode, std::move(dependencies)};
+
+    // Hash every unique header dep discovered by this worker. Running
+    // here (inside the std::async worker) lets the I/O overlap with
+    // other workers' Clang invocations; the old path did this on the
+    // main thread after the join and was a visible serial bottleneck
+    // on large codebases with many shared headers.
+    std::map<std::string, std::string> depHashes;
+    for (const auto &[sourcePath, deps] : dependencies) {
+        for (const auto &depPath : deps) {
+            if (depHashes.count(depPath) > 0) {
+                continue;
+            }
+            auto hash = hashFileContent(depPath);
+            if (!hash.empty()) {
+                depHashes[depPath] = std::move(hash);
+            }
+        }
+    }
+    return {std::move(findings), toolExitCode, std::move(dependencies),
+            std::move(depHashes)};
 }
 
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
@@ -689,6 +714,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     auto startTime = std::chrono::steady_clock::now();
     std::vector<Finding> allFindings;
     std::map<std::string, std::vector<std::string>> collectedDependencies;
+    std::map<std::string, std::string> collectedDepHashes;
     int worstExitCode = 0;
 
     if (workerCount == 1) {
@@ -697,6 +723,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         allFindings = std::move(chunkResult.findings);
         worstExitCode = chunkResult.exitCode;
         collectedDependencies = std::move(chunkResult.dependencies);
+        collectedDepHashes = std::move(chunkResult.depHashes);
     } else {
         // Partition sources into round-robin chunks so individual large TUs
         // are spread across workers rather than concentrated in one.
@@ -723,6 +750,9 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                                std::make_move_iterator(chunkResult.findings.end()));
             for (auto &entry : chunkResult.dependencies) {
                 collectedDependencies[entry.first] = std::move(entry.second);
+            }
+            for (auto &entry : chunkResult.depHashes) {
+                collectedDepHashes.insert(std::move(entry));
             }
             if (chunkResult.exitCode > worstExitCode) {
                 worstExitCode = chunkResult.exitCode;
@@ -815,10 +845,9 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     result.success = (worstExitCode == 0);
     result.findings = std::move(allFindings);
     // Record the hashes of everything we just analyzed (or carried over)
-    // so the next --incremental run can skip them. Dependency lists
-    // (both freshly collected and carried over) are stored alongside,
-    // and every user-header dep gets its own content hash so the next
-    // run can detect changes to included files.
+    // so the next --incremental run can skip them. Header-dep hashes
+    // come from the workers (see runAnalysisChunk), which compute them
+    // in parallel with analysis — the main thread only has to merge.
     if (incrementalMode) {
         result.fileHashes = std::move(currentHashes);
         result.dependencies = std::move(carriedDependencies);
@@ -834,19 +863,12 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
         result.dependencies = std::move(collectedDependencies);
     }
-    // Hash every header dependency so next-run comparisons have a
-    // baseline; cache by path to avoid hashing the same header twice
-    // when it is shared across TUs.
-    for (const auto &[sourcePath, deps] : result.dependencies) {
-        for (const auto &depPath : deps) {
-            if (result.fileHashes.count(depPath) > 0) {
-                continue;
-            }
-            auto hash = hashFileContent(depPath);
-            if (!hash.empty()) {
-                result.fileHashes[depPath] = std::move(hash);
-            }
-        }
+    // Merge dep hashes computed by workers. `insert` keeps any hash
+    // already present in `fileHashes` — e.g., carried over from the
+    // prior run via `currentHashes` / `currentDepHashes` — which is
+    // what we want since those are authoritative when they exist.
+    for (auto &entry : collectedDepHashes) {
+        result.fileHashes.insert(std::move(entry));
     }
     assignFindingIds(result);
 
