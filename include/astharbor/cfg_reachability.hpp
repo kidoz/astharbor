@@ -1,4 +1,6 @@
 #pragma once
+#include <clang/AST/ASTContext.h>
+#include <clang/AST/Decl.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/ExprCXX.h>
 #include <clang/AST/Stmt.h>
@@ -6,7 +8,9 @@
 #include <clang/Basic/SourceLocation.h>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -214,6 +218,59 @@ forwardReachable(const clang::CFGBlock *startBlock, size_t startIndex,
         }
     }
     return std::nullopt;
+}
+
+// ── Per-function CFG cache ────────────────────────────────────────────
+//
+// Multiple CFG-based rules running on the same TU routinely match the
+// same function and independently rebuild its `clang::CFG`. For
+// functions with many matches (and as the Tier 2 rule set grows) this
+// duplicated work dominates per-rule cost. The cache collapses N rule
+// invocations on the same function to a single `CFG::buildCFG` call.
+//
+// The cache is thread-local so each parallel worker has its own state
+// — `runAnalysisChunk` calls `tool.run()` on a single thread and the
+// cache never crosses worker boundaries. Keys are `FunctionDecl*`,
+// which are only valid within one ASTContext, so callers MUST invoke
+// `clearCfgCache()` at end-of-TU to avoid use-after-free on stale
+// pointers from the previous context. The dependency-collector's
+// `EndSourceFileAction` does this.
+
+namespace detail {
+inline std::unordered_map<const clang::FunctionDecl *,
+                           std::unique_ptr<clang::CFG>> &
+threadLocalCfgCache() {
+    thread_local std::unordered_map<const clang::FunctionDecl *,
+                                     std::unique_ptr<clang::CFG>> cache;
+    return cache;
+}
+} // namespace detail
+
+/// Return the CFG for `func` from the thread-local cache, building one
+/// on first access. Returns nullptr if the function has no body or the
+/// CFG builder rejects it; the null result is cached too so subsequent
+/// calls don't re-try. Caller must not free the returned pointer.
+inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
+                                        clang::ASTContext &context) {
+    if (func == nullptr || !func->hasBody()) {
+        return nullptr;
+    }
+    auto &cache = detail::threadLocalCfgCache();
+    auto it = cache.find(func);
+    if (it != cache.end()) {
+        return it->second.get();
+    }
+    clang::CFG::BuildOptions options;
+    auto cfg = clang::CFG::buildCFG(func, func->getBody(), &context, options);
+    const clang::CFG *result = cfg.get();
+    cache.emplace(func, std::move(cfg));
+    return result;
+}
+
+/// Drop every cached CFG. Must be called at end-of-TU because
+/// `FunctionDecl*` keys are only valid within one `ASTContext`.
+inline void clearCfgCache() {
+    detail::threadLocalCfgCache().clear();
 }
 
 } // namespace astharbor::cfg

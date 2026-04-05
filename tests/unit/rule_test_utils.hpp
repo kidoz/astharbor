@@ -1,5 +1,6 @@
 #pragma once
 
+#include "astharbor/cfg_reachability.hpp"
 #include "astharbor/finding.hpp"
 #include "astharbor/rule.hpp"
 
@@ -32,6 +33,11 @@ inline RuleRunResult runRuleOnCode(std::unique_ptr<Rule> rule, std::string code,
                                                            args, std::move(fileName),
                                                            "/opt/homebrew/opt/llvm/bin/clang++");
     result.findings = rulePtr->getFindings();
+    // Drop per-function CFG cache entries before the ASTContext this
+    // invocation owned goes away. Consecutive tests on the same thread
+    // would otherwise risk use-after-free on stale `FunctionDecl*`
+    // keys that happened to alias new pointers in the next context.
+    cfg::clearCfgCache();
     return result;
 }
 

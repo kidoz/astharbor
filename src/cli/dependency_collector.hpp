@@ -1,4 +1,5 @@
 #pragma once
+#include "astharbor/cfg_reachability.hpp"
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/Basic/FileEntry.h>
 #include <clang/Basic/SourceManager.h>
@@ -112,6 +113,9 @@ class MatchFinderWithDepsAction : public clang::ASTFrontendAction {
             std::vector<std::string> sortedDeps(currentDeps.begin(), currentDeps.end());
             (*depsByFile)[key] = std::move(sortedDeps);
         }
+        // Drop cached CFGs before the ASTContext goes away — their
+        // `FunctionDecl*` keys are only valid within this TU.
+        cfg::clearCfgCache();
         ASTFrontendAction::EndSourceFileAction();
     }
 

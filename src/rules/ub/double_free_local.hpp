@@ -53,9 +53,8 @@ class UbDoubleFreeLocalRule : public Rule {
             return;
         }
 
-        clang::CFG::BuildOptions options;
-        auto cfg = clang::CFG::buildCFG(Func, Func->getBody(), Result.Context, options);
-        if (!cfg) {
+        const clang::CFG *cfg = cfg::getOrBuildCfg(Func, *Result.Context);
+        if (cfg == nullptr) {
             return;
         }
 
