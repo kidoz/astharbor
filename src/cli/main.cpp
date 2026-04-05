@@ -5,6 +5,7 @@
 #include <future>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <sys/wait.h>
@@ -15,6 +16,7 @@
 #include <clang/Tooling/Tooling.h>
 #include "astharbor/rule_registry.hpp"
 #include "astharbor/analyzer.hpp"
+#include "astharbor/config.hpp"
 #include "astharbor/fix_applicator.hpp"
 #include "astharbor/run_store.hpp"
 #include "../emitters/json_emitter.hpp"
@@ -44,6 +46,12 @@ static llvm::cl::opt<std::string> RuleFilter("rule", llvm::cl::desc("Filter by r
 static llvm::cl::opt<bool> Backup("backup",
                                    llvm::cl::desc("Create .bak backup before applying fixes"),
                                    llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<bool>
+    AllSafe("all-safe",
+            llvm::cl::desc("Discoverable alias for `--apply` that applies every safe fix "
+                           "across the analyzed source set and reports a per-rule breakdown."),
+            llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string>
     SaveRun("save-run",
@@ -94,6 +102,27 @@ static llvm::cl::opt<bool>
                 llvm::cl::desc("Only analyze files reported as modified by `git diff`."),
                 llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
+// Project config discovered from .astharbor.yml. CLI option values are
+// merged from this struct after setupParser() has populated the cl::opts,
+// so explicit CLI flags always win and config-provided values fill in
+// gaps only.
+static Config projectConfig; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+static void applyConfigDefaults() {
+    auto applyConfigString = [](llvm::cl::opt<std::string> &option,
+                                 const std::string &value) {
+        if (!value.empty() && option.getNumOccurrences() == 0) {
+            option = value;
+        }
+    };
+    applyConfigString(Checks, projectConfig.checks);
+    applyConfigString(Std, projectConfig.std);
+    applyConfigString(CompilerProfile, projectConfig.compilerProfile);
+    if (projectConfig.jobs > 0 && Jobs.getNumOccurrences() == 0) {
+        Jobs = projectConfig.jobs;
+    }
+}
+
 void print_help() {
     std::cout << "ASTHarbor CLI\n";
     std::cout << "Commands:\n";
@@ -120,6 +149,7 @@ void print_help() {
     std::cout << "  --run-id=ID         Load a previously saved run instead of re-analyzing\n";
     std::cout << "  --finding-id=ID     Apply fix only for a specific finding id\n";
     std::cout << "  --backup            Create .bak backup files before modifying\n";
+    std::cout << "  --all-safe          Apply every safe fix (alias for --apply) with summary\n";
     std::cout << "\nCommon options:\n";
     std::cout << "  --format=FORMAT     Output format: text, json, sarif\n";
 }
@@ -451,6 +481,20 @@ int main(int argc, const char **argv) {
 
     std::string command = argv[1];
 
+    // Load .astharbor.yml from the current directory upward. Values are
+    // merged into cl::opts after each command's CommonOptionsParser has
+    // populated them, so explicit CLI flags always win. The config fills
+    // in defaults only.
+    std::string configPathStr;
+    if (auto configPath = discoverConfig(std::filesystem::current_path())) {
+        if (auto loaded = loadConfig(*configPath)) {
+            projectConfig = std::move(*loaded);
+            configPathStr = configPath->string();
+        } else {
+            llvm::errs() << "Warning: failed to parse " << configPath->string() << "\n";
+        }
+    }
+
     RuleRegistry registry;
     registerBuiltinRules(registry);
 
@@ -458,6 +502,10 @@ int main(int argc, const char **argv) {
         auto parser = setupParser(argc, argv);
         if (!parser) {
             return 2;
+        }
+        applyConfigDefaults();
+        if (!configPathStr.empty() && Verbose.getValue()) {
+            llvm::errs() << "[verbose] Loaded config: " << configPathStr << "\n";
         }
 
         auto [result, exitCode] = runAnalysis(*parser, registry);
@@ -506,6 +554,7 @@ int main(int argc, const char **argv) {
         if (!parser) {
             return 2;
         }
+        applyConfigDefaults();
 
         AnalysisResult result;
 
@@ -548,14 +597,40 @@ int main(int argc, const char **argv) {
             return 0;
         }
 
-        if (Apply.getValue() && !DryRun.getValue()) {
+        // `--all-safe` is a discoverable alias for `--apply` with no rule
+        // filter. It also enables the per-rule summary so batch modernization
+        // runs produce a useful audit trail.
+        const bool shouldApply =
+            (Apply.getValue() || AllSafe.getValue()) && !DryRun.getValue();
+        if (shouldApply) {
             auto applyResult = FixApplicator::apply(fixableFindings, Backup.getValue());
+
+            // Per-rule breakdown: count safe fixes grouped by rule id.
+            std::map<std::string, int> perRuleApplied;
+            for (const auto &finding : fixableFindings) {
+                for (const auto &fix : finding.fixes) {
+                    if (fix.safety == "safe") {
+                        perRuleApplied[finding.ruleId]++;
+                    }
+                }
+            }
 
             if (Format.getValue() == "json") {
                 std::cout << "{\n";
-                std::cout << "  \"filesModified\": " << applyResult.filesModified << ",\n";
-                std::cout << "  \"fixesApplied\": " << applyResult.fixesApplied << ",\n";
-                std::cout << "  \"fixesSkipped\": " << applyResult.fixesSkipped << ",\n";
+                std::cout << R"(  "filesModified": )" << applyResult.filesModified << ",\n";
+                std::cout << R"(  "fixesApplied": )" << applyResult.fixesApplied << ",\n";
+                std::cout << R"(  "fixesSkipped": )" << applyResult.fixesSkipped << ",\n";
+                std::cout << "  \"byRule\": {";
+                bool first = true;
+                for (const auto &[ruleId, count] : perRuleApplied) {
+                    std::cout << (first ? "\n" : ",\n");
+                    std::cout << "    \"" << ruleId << "\": " << count;
+                    first = false;
+                }
+                if (!perRuleApplied.empty()) {
+                    std::cout << "\n  ";
+                }
+                std::cout << "},\n";
                 std::cout << "  \"errors\": [";
                 for (size_t index = 0; index < applyResult.errors.size(); ++index) {
                     std::cout << "\"" << applyResult.errors[index] << "\"";
@@ -567,6 +642,12 @@ int main(int argc, const char **argv) {
             } else {
                 std::cout << "Applied " << applyResult.fixesApplied << " fix(es) across "
                           << applyResult.filesModified << " file(s).\n";
+                if (!perRuleApplied.empty()) {
+                    std::cout << "By rule:\n";
+                    for (const auto &[ruleId, count] : perRuleApplied) {
+                        std::cout << "  " << ruleId << ": " << count << "\n";
+                    }
+                }
                 if (applyResult.fixesSkipped > 0) {
                     std::cout << "Skipped " << applyResult.fixesSkipped
                               << " non-safe fix(es).\n";
