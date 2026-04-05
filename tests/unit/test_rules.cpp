@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 
+#include "../../src/rules/best_practice/explicit_single_arg_ctor.hpp"
+#include "../../src/rules/best_practice/no_raw_new_delete.hpp"
 #include "../../src/rules/bugprone/assignment_in_condition.hpp"
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
+#include "../../src/rules/portability/vla_in_cxx.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
+#include "../../src/rules/readability/use_using_alias.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -686,4 +690,142 @@ TEST(ReadabilityContainerSizeEmptyRuleTest, HandlesReversedOperands) {
     ASSERT_EQ(result.findings.size(), 1u);
     ASSERT_EQ(result.findings.front().fixes.size(), 1u);
     EXPECT_EQ(result.findings.front().fixes.front().replacementText, "!c.empty()");
+}
+
+// ─── Missing initial rule coverage ─────────────────────────────────
+
+TEST(ReadabilityUseUsingAliasRuleTest, DetectsSimpleTypedef) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
+        R"cpp(
+            typedef int MyInt;
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "readability/use-using-alias");
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().safety, "safe");
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText,
+              "using MyInt = int");
+}
+
+TEST(ReadabilityUseUsingAliasRuleTest, NoAutofixForFunctionPointerTypedef) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
+        R"cpp(
+            typedef int (*Callback)(int);
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    // Complex type — diagnostic only, no autofix.
+    EXPECT_TRUE(result.findings.front().fixes.empty());
+}
+
+TEST(PortabilityVlaInCxxRuleTest, DetectsVlaInCpp) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
+        R"cpp(
+            void test(int n) {
+                int arr[n];
+                (void)arr;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "portability/vla-in-cxx");
+}
+
+TEST(PortabilityVlaInCxxRuleTest, IgnoresFixedSizeArray) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
+        R"cpp(
+            void test() {
+                int arr[10];
+                (void)arr;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BestPracticeNoRawNewDeleteRuleTest, DetectsRawNewAndDelete) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BestPracticeNoRawNewDeleteRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    // Expect both the new and delete to be flagged.
+    ASSERT_EQ(result.findings.size(), 2u);
+}
+
+TEST(BestPracticeNoRawNewDeleteRuleTest, IgnoresPlacementNew) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BestPracticeNoRawNewDeleteRule>(),
+        R"cpp(
+            void *operator new(unsigned long, void *p) noexcept { return p; }
+            struct Widget { int value; };
+            void test(void *buffer) {
+                Widget *w = new (buffer) Widget;
+                (void)w;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    // Placement new should not be flagged.
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BestPracticeExplicitSingleArgCtorRuleTest, DetectsImplicitSingleArgCtor) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BestPracticeExplicitSingleArgCtorRule>(),
+        R"cpp(
+            class Widget {
+              public:
+                Widget(int value);
+            };
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId,
+              "best-practice/explicit-single-arg-ctor");
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText, "explicit ");
+}
+
+TEST(BestPracticeExplicitSingleArgCtorRuleTest, IgnoresExplicitCtor) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BestPracticeExplicitSingleArgCtorRule>(),
+        R"cpp(
+            class Widget {
+              public:
+                explicit Widget(int value);
+            };
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(BestPracticeExplicitSingleArgCtorRuleTest, IgnoresCopyConstructor) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BestPracticeExplicitSingleArgCtorRule>(),
+        R"cpp(
+            class Widget {
+              public:
+                Widget(const Widget &other);
+            };
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
 }
