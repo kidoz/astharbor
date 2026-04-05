@@ -1,6 +1,7 @@
 #pragma once
 #include "finding.hpp"
 #include <clang/ASTMatchers/ASTMatchFinder.h>
+#include <clang/Basic/FileManager.h>
 #include <clang/Basic/SourceManager.h>
 #include <optional>
 #include <string>
@@ -36,6 +37,12 @@ class Rule : public clang::ast_matchers::MatchFinder::MatchCallback {
     /// source location decomposed from `location`. Returns nullopt if the
     /// location is in a system header or its filename cannot be resolved —
     /// callers can safely early-return without emitting anything.
+    ///
+    /// The `file` field is set to the FileEntry's real-path when
+    /// available so downstream consumers (in particular `--incremental`
+    /// carry-forward matching) see a canonical absolute path that
+    /// compares equal across runs regardless of how the source was
+    /// passed on argv or spelled in the compilation database.
     std::optional<Finding> makeFinding(clang::SourceLocation location,
                                        const clang::SourceManager &sourceManager,
                                        std::string message) const {
@@ -43,13 +50,34 @@ class Rule : public clang::ast_matchers::MatchFinder::MatchCallback {
             return std::nullopt;
         }
         auto expansion = sourceManager.getExpansionLoc(location);
-        std::string file = sourceManager.getFilename(expansion).str();
+        auto decomposed = sourceManager.getDecomposedLoc(expansion);
+        std::string file;
+        if (auto fileEntry = sourceManager.getFileEntryRefForID(decomposed.first)) {
+            // Prefer the FileManager's canonical name: it goes through
+            // the same VFS that resolved the include and produces an
+            // absolute real path even when Clang's tooling layer hasn't
+            // changed the process cwd. `tryGetRealPathName` is checked
+            // first because it's already cached on the FileEntry when
+            // populated. Falls back to the spelling Clang knows if all
+            // canonicalization attempts fail.
+            file = fileEntry->getFileEntry().tryGetRealPathName().str();
+            if (file.empty()) {
+                file = sourceManager.getFileManager()
+                           .getCanonicalName(*fileEntry)
+                           .str();
+            }
+            if (file.empty()) {
+                file = fileEntry->getName().str();
+            }
+        }
+        if (file.empty()) {
+            // Virtual files (macro expansions, in-memory buffers) don't
+            // map to a FileEntry; fall back to the raw filename string.
+            file = sourceManager.getFilename(expansion).str();
+        }
         if (file.empty()) {
             return std::nullopt;
         }
-        // A single `getDecomposedLoc` call gives us both line and column
-        // without recomputing the decomposition twice.
-        auto decomposed = sourceManager.getDecomposedLoc(expansion);
         bool invalid = false;
         unsigned line =
             sourceManager.getLineNumber(decomposed.first, decomposed.second, &invalid);

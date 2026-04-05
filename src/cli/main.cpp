@@ -429,13 +429,29 @@ runAnalysisChunk(const std::vector<std::string> &chunkPaths,
     }
 
     std::map<std::string, std::vector<std::string>> dependencies;
-    MatchFinderWithDepsFactory factory(&finder, &dependencies);
+    std::map<std::string, std::string> fileAliases;
+    MatchFinderWithDepsFactory factory(&finder, &dependencies, &fileAliases);
     int toolExitCode = tool.run(&factory);
 
     std::vector<Finding> findings;
     for (const Rule *rule : activeRules) {
         auto ruleFindings = rule->getFindings();
         findings.insert(findings.end(), ruleFindings.begin(), ruleFindings.end());
+    }
+    // Normalize finding paths through the alias map built during
+    // analysis. Rules that construct `Finding` directly (bypassing
+    // `makeFinding`) often record `sourceManager.getFilename(loc)`,
+    // which is the short name Clang resolved via the compile command
+    // directory. The alias map pairs each such short name with the
+    // FileEntry's real path so downstream consumers (notably the
+    // `--incremental` carry-forward logic) see canonical strings.
+    if (!fileAliases.empty()) {
+        for (auto &finding : findings) {
+            auto it = fileAliases.find(finding.file);
+            if (it != fileAliases.end()) {
+                finding.file = it->second;
+            }
+        }
     }
 
     // Hash every unique header dep discovered by this worker. Running
@@ -605,23 +621,13 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                         carriedDependencies[path] = depsIt->second;
                     }
                 }
-                // Carry forward findings for unchanged files. Findings
-                // may record their file path in whatever form Clang
-                // reported it (often a short name relative to the
-                // compile command's directory), so we also match on
-                // basename against the canonical unchanged set. This
-                // can alias distinct files that share a basename, but
-                // the worst case is a false carry-forward that re-runs
-                // correctly on the next invocation.
-                std::set<std::string> unchangedBasenames;
-                for (const auto &path : unchangedFiles) {
-                    unchangedBasenames.insert(
-                        std::filesystem::path(path).filename().string());
-                }
+                // Carry forward findings for unchanged files. Finding
+                // paths are canonical absolute strings (set by the
+                // dep-collector's file-alias map during analysis), so a
+                // direct lookup against `unchangedFiles` is sufficient
+                // and unambiguous across files that share a basename.
                 for (const auto &finding : priorRun->findings) {
-                    if (unchangedFiles.count(finding.file) > 0 ||
-                        unchangedBasenames.count(
-                            std::filesystem::path(finding.file).filename().string()) > 0) {
+                    if (unchangedFiles.count(finding.file) > 0) {
                         carriedFindings.push_back(finding);
                     }
                 }

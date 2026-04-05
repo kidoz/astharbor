@@ -72,6 +72,22 @@ def test_cpp_fixture_findings_have_stable_ids():
     assert len(set(ids)) == len(ids), "findingIds must be unique"
 
 
+def test_cpp_fixture_findings_use_canonical_paths():
+    # Finding paths must be absolute real-path strings so --incremental
+    # carry-forward can match against canonical keys. Regression guard
+    # for the previously-used basename aliasing heuristic.
+    data = _run_analyze(os.path.join(CPP_FIXTURE, "main.cpp"))
+    assert data["findings"], "expected some findings in the C++ fixture"
+    for finding in data["findings"]:
+        file_path = finding["file"]
+        assert os.path.isabs(file_path), \
+            f"finding path is not absolute: {file_path!r}"
+        # Real-path resolution strips any symlink indirection (e.g.
+        # /tmp → /private/tmp on macOS); the resulting path must exist.
+        assert os.path.exists(file_path), \
+            f"finding path does not exist on disk: {file_path!r}"
+
+
 def test_cpp_fixture_produces_safe_autofixes():
     data = _run_analyze(os.path.join(CPP_FIXTURE, "main.cpp"))
     safe_rules = {
