@@ -1100,6 +1100,50 @@ TEST(UbDoubleFreeLocalRuleTest, IgnoresSingleDelete) {
     EXPECT_TRUE(result.findings.empty());
 }
 
+TEST(UbDoubleFreeLocalRuleTest, IgnoresDeleteInBranchWithEarlyReturn) {
+    // With CFG reachability the second delete is unreachable from the
+    // first because the `return` cuts the path. The source-order walker
+    // reported this as a false positive; the CFG-based analysis does not.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+        R"cpp(
+            void test(bool flag) {
+                int *p = new int(42);
+                if (flag) {
+                    delete p;
+                    return;
+                }
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbDoubleFreeLocalRuleTest, DetectsDeleteInBothBranchesAfterMerge) {
+    // Both branches delete p, then the merge point deletes again.
+    // Every path from the first delete reaches the merge delete, so this
+    // is a real double-free.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+        R"cpp(
+            void test(bool flag) {
+                int *p = new int(42);
+                if (flag) {
+                    delete p;
+                } else {
+                    delete p;
+                }
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_FALSE(result.findings.empty());
+    EXPECT_EQ(result.findings.front().ruleId, "ub/double-free-local");
+}
+
 // ─── uninitialized-local (Tier 2) ──────────────────────────────────────
 
 TEST(UbUninitializedLocalRuleTest, DetectsReadBeforeWrite) {
