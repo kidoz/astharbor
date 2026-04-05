@@ -187,6 +187,40 @@ def test_checks_negative_pattern_excludes_rules(tmp_path):
     assert "modernize/use-nullptr" in rules
 
 
+def test_jobs_flag_parallel_analysis(tmp_path):
+    """--jobs N should produce the same findings as sequential execution."""
+    source_a = tmp_path / "a.cpp"
+    source_b = tmp_path / "b.cpp"
+    shutil.copy(os.path.join(CPP_FIXTURE, "main.cpp"), source_a)
+    shutil.copy(os.path.join(CPP_FIXTURE, "main.cpp"), source_b)
+
+    executable = cli_bridge.get_astharbor_path()
+    sequential = subprocess.run(
+        [executable, "analyze", str(source_a), str(source_b), "--format=json", "--"],
+        capture_output=True,
+        text=True,
+    )
+    parallel = subprocess.run(
+        [
+            executable,
+            "analyze",
+            str(source_a),
+            str(source_b),
+            "--jobs=2",
+            "--format=json",
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    seq_data = json.loads(sequential.stdout)
+    par_data = json.loads(parallel.stdout)
+
+    seq_key = sorted((f["file"], f["line"], f["ruleId"]) for f in seq_data["findings"])
+    par_key = sorted((f["file"], f["line"], f["ruleId"]) for f in par_data["findings"])
+    assert seq_key == par_key
+
+
 def test_save_run_and_load_via_run_id(tmp_path):
     source = tmp_path / "main.cpp"
     shutil.copy(os.path.join(CPP_FIXTURE, "main.cpp"), source)

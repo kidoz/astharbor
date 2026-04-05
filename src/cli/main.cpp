@@ -1,9 +1,14 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <future>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <sys/wait.h>
+#include <tuple>
 #include <vector>
 #include <clang/Tooling/ArgumentsAdjusters.h>
 #include <clang/Tooling/CommonOptionsParser.h>
@@ -78,6 +83,17 @@ static llvm::cl::opt<std::string>
                     llvm::cl::desc("Compiler dialect profile: auto (default), clang, or gcc"),
                     llvm::cl::init("auto"), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<unsigned>
+    Jobs("jobs",
+         llvm::cl::desc("Number of parallel analysis workers (default: 1). Each worker owns a "
+                        "fresh RuleRegistry and ClangTool; findings are merged deterministically."),
+         llvm::cl::init(1), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<bool>
+    ChangedOnly("changed-only",
+                llvm::cl::desc("Only analyze files reported as modified by `git diff`."),
+                llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+
 void print_help() {
     std::cout << "ASTHarbor CLI\n";
     std::cout << "Commands:\n";
@@ -94,6 +110,8 @@ void print_help() {
     std::cout << "  --verbose           Print progress and timing to stderr\n";
     std::cout << "  --std=VALUE         Language standard in single-file mode (e.g. c++20)\n";
     std::cout << "  --compiler-profile=P  Compiler dialect: auto (default), clang, or gcc\n";
+    std::cout << "  --jobs=N            Run analysis across N parallel workers\n";
+    std::cout << "  --changed-only      Only analyze files modified per `git diff`\n";
     std::cout << "\nFix options:\n";
     std::cout << "  --apply             Apply safe fixes (default: preview only)\n";
     std::cout << "  --dry-run           Preview fixes without applying\n";
@@ -157,6 +175,109 @@ static bool ruleIsEnabled(const std::string &ruleId,
     return true;
 }
 
+/// Return the set of files reported as modified by `git diff --name-only`
+/// (both uncommitted and staged changes). Returns nullopt if git is not
+/// available or we are not inside a git repository.
+static std::optional<std::vector<std::string>> gitChangedFiles() {
+    std::vector<std::string> changed;
+    auto capture = [&](const char *command) -> bool {
+        FILE *pipe = popen(command, "r");
+        if (pipe == nullptr) {
+            return false;
+        }
+        char buffer[4096];
+        while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            std::string line = buffer;
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+                line.pop_back();
+            }
+            if (!line.empty()) {
+                changed.push_back(line);
+            }
+        }
+        int status = pclose(pipe);
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    };
+    if (!capture("git diff --name-only 2>/dev/null")) {
+        return std::nullopt;
+    }
+    capture("git diff --cached --name-only 2>/dev/null");
+    return changed;
+}
+
+/// Keep only paths whose absolute form or basename is present in `changed`.
+/// The match is permissive on purpose — git reports paths relative to the
+/// repo root, while ASTHarbor receives whatever the user passed on argv.
+static std::vector<std::string>
+filterByChangedFiles(const std::vector<std::string> &paths,
+                     const std::vector<std::string> &changed) {
+    std::vector<std::string> filtered;
+    for (const auto &path : paths) {
+        std::filesystem::path candidate(path);
+        std::string basename = candidate.filename().string();
+        for (const auto &changedPath : changed) {
+            std::filesystem::path changedFsPath(changedPath);
+            if (changedFsPath.filename().string() == basename) {
+                filtered.push_back(path);
+                break;
+            }
+        }
+    }
+    return filtered;
+}
+
+/// Apply --std and --compiler-profile adjusters to a ClangTool.
+static void applyCompilerAdjusters(ClangTool &tool) {
+    if (!Std.getValue().empty()) {
+        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+            ("-std=" + Std.getValue()).c_str(), ArgumentInsertPosition::BEGIN));
+    }
+    const std::string profile = CompilerProfile.getValue();
+    if (profile == "gcc") {
+        tool.appendArgumentsAdjuster(
+            getInsertArgumentAdjuster("-fgnu-keywords", ArgumentInsertPosition::BEGIN));
+        tool.appendArgumentsAdjuster(
+            getInsertArgumentAdjuster("-fgnu89-inline", ArgumentInsertPosition::BEGIN));
+    } else if (profile != "auto" && profile != "clang") {
+        llvm::errs() << "Warning: unknown --compiler-profile '" << profile
+                     << "', falling back to auto\n";
+    }
+}
+
+/// Run analysis on a single chunk of source files with a fresh RuleRegistry.
+/// Used as the per-worker function for parallel analysis; the sequential
+/// path just calls it once with all sources.
+static std::pair<std::vector<Finding>, int>
+runAnalysisChunk(const std::vector<std::string> &chunkPaths,
+                 CompilationDatabase &compilationDb,
+                 const std::vector<std::string> &positivePatterns,
+                 const std::vector<std::string> &negativePatterns) {
+    RuleRegistry registry;
+    registerBuiltinRules(registry);
+
+    ClangTool tool(compilationDb, chunkPaths);
+    applyCompilerAdjusters(tool);
+
+    std::vector<const Rule *> activeRules;
+    clang::ast_matchers::MatchFinder finder;
+    for (const auto &rule : registry.getRules()) {
+        if (!ruleIsEnabled(rule->id(), positivePatterns, negativePatterns)) {
+            continue;
+        }
+        rule->registerMatchers(finder);
+        activeRules.push_back(rule.get());
+    }
+
+    int toolExitCode = tool.run(newFrontendActionFactory(&finder).get());
+
+    std::vector<Finding> findings;
+    for (const Rule *rule : activeRules) {
+        auto ruleFindings = rule->getFindings();
+        findings.insert(findings.end(), ruleFindings.begin(), ruleFindings.end());
+    }
+    return {std::move(findings), toolExitCode};
+}
+
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
 static std::optional<CommonOptionsParser> setupParser(int argc, const char **argv) {
     std::vector<const char *> args;
@@ -175,7 +296,8 @@ static std::optional<CommonOptionsParser> setupParser(int argc, const char **arg
     return std::move(*expectedParser);
 }
 
-/// Run analysis and return findings. Returns empty vector on tool failure.
+/// Run analysis and return findings. Honors --jobs, --changed-only, --checks,
+/// --std, --compiler-profile, --verbose.
 static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                                                    const RuleRegistry &registry) {
     const bool verbose = Verbose.getValue();
@@ -195,6 +317,28 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
     }
 
+    if (ChangedOnly.getValue()) {
+        auto changed = gitChangedFiles();
+        if (!changed) {
+            llvm::errs() << "Warning: --changed-only requested but git is not available "
+                            "or the working directory is not a repository; analyzing all "
+                            "files.\n";
+        } else {
+            auto filtered = filterByChangedFiles(sourcePaths, *changed);
+            if (verbose) {
+                llvm::errs() << "[verbose] --changed-only: " << filtered.size() << " of "
+                             << sourcePaths.size() << " files match git-changed set\n";
+            }
+            sourcePaths = std::move(filtered);
+            if (sourcePaths.empty()) {
+                AnalysisResult emptyResult;
+                emptyResult.runId = generateRunId();
+                emptyResult.success = true;
+                return {std::move(emptyResult), 0};
+            }
+        }
+    }
+
     if (verbose) {
         llvm::errs() << "[verbose] Analyzing " << sourcePaths.size() << " file(s)\n";
         for (const auto &path : sourcePaths) {
@@ -202,70 +346,85 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
     }
 
-    ClangTool tool(compilationDb, sourcePaths);
-
-    // Inject --std and --compiler-profile flags at the beginning of each
-    // compile command so they apply regardless of whether the sources came
-    // from a compilation database or the trailing `--` fixed database.
-    if (!Std.getValue().empty()) {
-        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
-            ("-std=" + Std.getValue()).c_str(), ArgumentInsertPosition::BEGIN));
-    }
-    const std::string profile = CompilerProfile.getValue();
-    if (profile == "gcc") {
-        // Enable GNU extensions so GCC-specific code parses cleanly under
-        // Clang libtooling.
-        tool.appendArgumentsAdjuster(
-            getInsertArgumentAdjuster("-fgnu-keywords", ArgumentInsertPosition::BEGIN));
-        tool.appendArgumentsAdjuster(
-            getInsertArgumentAdjuster("-fgnu89-inline", ArgumentInsertPosition::BEGIN));
-    } else if (profile != "auto" && profile != "clang") {
-        llvm::errs() << "Warning: unknown --compiler-profile '" << profile
-                     << "', falling back to auto\n";
-    }
-
-    // Build the active rule set honouring --checks. Rules outside the set
-    // are neither registered nor polled for findings, so the matcher engine
-    // skips their work entirely.
     auto [positivePatterns, negativePatterns] = parseChecksPattern(Checks.getValue());
-    std::vector<const Rule *> activeRules;
-    activeRules.reserve(registry.getRules().size());
-    clang::ast_matchers::MatchFinder finder;
-    for (const auto &rule : registry.getRules()) {
-        if (!ruleIsEnabled(rule->id(), positivePatterns, negativePatterns)) {
-            continue;
-        }
-        rule->registerMatchers(finder);
-        activeRules.push_back(rule.get());
+
+    // Determine worker count. Single-file or --jobs=1 uses the sequential
+    // path so we don't pay thread-startup overhead for tiny analyses.
+    unsigned requestedJobs = std::max(1u, Jobs.getValue());
+    unsigned workerCount =
+        std::min<unsigned>(requestedJobs, static_cast<unsigned>(sourcePaths.size()));
+    if (workerCount == 0) {
+        workerCount = 1;
     }
 
-    if (verbose) {
-        llvm::errs() << "[verbose] " << activeRules.size() << " of "
-                     << registry.getRules().size() << " rule(s) active\n";
+    if (verbose && workerCount > 1) {
+        llvm::errs() << "[verbose] Using " << workerCount << " parallel worker(s)\n";
     }
 
     auto startTime = std::chrono::steady_clock::now();
-    int toolExitCode = tool.run(newFrontendActionFactory(&finder).get());
+    std::vector<Finding> allFindings;
+    int worstExitCode = 0;
+
+    if (workerCount == 1) {
+        auto [findings, exitCode] =
+            runAnalysisChunk(sourcePaths, compilationDb, positivePatterns, negativePatterns);
+        allFindings = std::move(findings);
+        worstExitCode = exitCode;
+    } else {
+        // Partition sources into round-robin chunks so individual large TUs
+        // are spread across workers rather than concentrated in one.
+        std::vector<std::vector<std::string>> chunks(workerCount);
+        for (size_t index = 0; index < sourcePaths.size(); ++index) {
+            chunks[index % workerCount].push_back(sourcePaths[index]);
+        }
+
+        std::vector<std::future<std::pair<std::vector<Finding>, int>>> futures;
+        futures.reserve(chunks.size());
+        for (auto &chunk : chunks) {
+            if (chunk.empty()) {
+                continue;
+            }
+            futures.push_back(std::async(std::launch::async, [&, chunk]() {
+                return runAnalysisChunk(chunk, compilationDb, positivePatterns,
+                                        negativePatterns);
+            }));
+        }
+        for (auto &future : futures) {
+            auto [findings, exitCode] = future.get();
+            allFindings.insert(allFindings.end(),
+                               std::make_move_iterator(findings.begin()),
+                               std::make_move_iterator(findings.end()));
+            if (exitCode > worstExitCode) {
+                worstExitCode = exitCode;
+            }
+        }
+        // Parallel execution can interleave findings from different workers;
+        // sort deterministically so output order is stable.
+        std::sort(allFindings.begin(), allFindings.end(),
+                  [](const Finding &lhs, const Finding &rhs) {
+                      return std::tie(lhs.file, lhs.line, lhs.column, lhs.ruleId) <
+                             std::tie(rhs.file, rhs.line, rhs.column, rhs.ruleId);
+                  });
+    }
+
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - startTime)
                        .count();
 
     AnalysisResult result;
     result.runId = generateRunId();
-    result.success = (toolExitCode == 0);
-    for (const Rule *rule : activeRules) {
-        auto ruleFindings = rule->getFindings();
-        result.findings.insert(result.findings.end(), ruleFindings.begin(), ruleFindings.end());
-    }
+    result.success = (worstExitCode == 0);
+    result.findings = std::move(allFindings);
     assignFindingIds(result);
 
     if (verbose) {
         llvm::errs() << "[verbose] Analysis completed in " << elapsed << " ms, "
                      << result.findings.size() << " finding(s), tool exit "
-                     << toolExitCode << "\n";
+                     << worstExitCode << "\n";
     }
 
-    int exitCode = (toolExitCode != 0) ? 2 : (result.findings.empty() ? 0 : 1);
+    (void)registry;
+    int exitCode = (worstExitCode != 0) ? 2 : (result.findings.empty() ? 0 : 1);
     return {std::move(result), exitCode};
 }
 
