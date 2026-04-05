@@ -20,6 +20,7 @@
 #include "../../src/rules/ub/sizeof_array_parameter.hpp"
 #include "../../src/rules/ub/use_after_move.hpp"
 #include "../../src/rules/ub/use_after_free.hpp"
+#include "../../src/rules/ub/free_of_non_heap.hpp"
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
@@ -2188,6 +2189,100 @@ TEST_CASE("UbUseAfterFreeRuleTest.IgnoresSingleFree") {
             extern "C" void free(void*);
             void test() {
                 int *p = (int*)malloc(sizeof(int));
+                free(p);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── ub/free-of-non-heap (CERT MEM34-C) ──────────────────────────────
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfAddressOfLocal") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void free(void*);
+            void test() {
+                int x = 42;
+                free(&x);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/free-of-non-heap");
+}
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfLocalArrayDecay") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void free(void*);
+            void test() {
+                char buf[256];
+                free(buf);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStaticVar") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void free(void*);
+            int global_val = 42;
+            void test() {
+                free(&global_val);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStringLiteral") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void free(void*);
+            void test() {
+                free((void*)"hello");
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresHeapPointer") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            extern "C" void free(void*);
+            void test() {
+                void *p = malloc(16);
+                free(p);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresPointerParameter") {
+    // A pointer parameter could come from anywhere — we can't know
+    // whether it was heap-allocated or not.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+        R"cpp(
+            extern "C" void free(void*);
+            void test(void *p) {
                 free(p);
             }
         )cpp");

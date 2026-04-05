@@ -52,6 +52,7 @@
 #include "../rules/ub/sizeof_array_parameter.hpp"
 #include "../rules/ub/use_after_move.hpp"
 #include "../rules/ub/use_after_free.hpp"
+#include "../rules/ub/free_of_non_heap.hpp"
 #include "../rules/ub/double_free_local.hpp"
 #include "../rules/ub/uninitialized_local.hpp"
 #include "../rules/ub/null_deref_after_check.hpp"
@@ -114,6 +115,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbSizeofArrayParameterRule>());
     registry.registerRule(std::make_unique<UbUseAfterMoveRule>());
     registry.registerRule(std::make_unique<UbUseAfterFreeRule>());
+    registry.registerRule(std::make_unique<UbFreeOfNonHeapRule>());
     registry.registerRule(std::make_unique<UbDoubleFreeLocalRule>());
     registry.registerRule(std::make_unique<UbUninitializedLocalRule>());
     registry.registerRule(std::make_unique<UbNullDerefAfterCheckRule>());

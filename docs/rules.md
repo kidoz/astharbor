@@ -20,6 +20,7 @@ pure AST matcher.
 | `ub/delete-non-virtual-dtor` | `delete` through a base pointer whose class has no virtual destructor. | CERT OOP52-CPP, CWE-1079 |
 | `ub/division-by-zero-literal` | Division or modulo by a compile-time zero literal. | CERT INT33-C, CWE-369 |
 | `ub/double-free-local` | **(CFG)** Same local pointer passed to `delete` twice without reassignment. | CERT MEM30-C, CWE-415 |
+| `ub/free-of-non-heap` | `free()` called on a stack variable, static/global, array, or string literal. | CERT MEM34-C, CWE-590 |
 | `ub/implicit-widening-multiplication` | Narrow-typed multiplication whose result is then widened — overflow before the widen. | CERT INT18-C, CWE-190 |
 | `ub/missing-return-in-non-void` | Non-`void` function with a control-flow path that exits without `return`. | CERT MSC37-C, CWE-758 |
 | `ub/move-of-const` | `std::move` on a `const` lvalue — silently produces a copy, not a move. | `clang-tidy` `performance-move-const-arg` |
