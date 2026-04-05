@@ -5,6 +5,7 @@
 #include "../../src/rules/bugprone/assignment_in_condition.hpp"
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
 #include "../../src/rules/bugprone/swapped_arguments.hpp"
+#include "../../src/rules/bugprone/sizeof_pointer_in_memfunc.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
@@ -1834,6 +1835,105 @@ TEST_CASE("PerformanceStringConcatInLoopRuleTest.IgnoresNonStringType") {
                     s = s + i;
                 }
                 return s;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/sizeof-pointer-in-memfunc ────────────────────────────────
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemsetWithSizeofPtr") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memset(void*, int, unsigned long);
+            void test(int *p) {
+                memset(p, 0, sizeof(p));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE((result.findings.size()) == (1u));
+    CHECK((result.findings.front().ruleId) ==
+              ("bugprone/sizeof-pointer-in-memfunc"));
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsMemcpyWithSizeofDst") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memcpy(void*, const void*, unsigned long);
+            void test(int *dst, const int *src) {
+                memcpy(dst, src, sizeof(dst));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE((result.findings.size()) == (1u));
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.DetectsDecayedArrayParam") {
+    // `char buf[256]` as a parameter decays to `char*` in the AST, so
+    // sizeof(buf) is the pointer size, not 256. Classic footgun.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memset(void*, int, unsigned long);
+            void clear(char buf[256]) {
+                memset(buf, 0, sizeof(buf));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE((result.findings.size()) == (1u));
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofPointee") {
+    // `sizeof(*p)` is the pointee size — the correct idiom.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memset(void*, int, unsigned long);
+            void test(int *p) {
+                memset(p, 0, sizeof(*p));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofOfActualArray") {
+    // A true array (not a decayed parameter) has array type, so the
+    // buffer var's matcher (pointerType) doesn't bind and the rule
+    // stays silent — correct, sizeof(arr) is the full array length.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memset(void*, int, unsigned long);
+            void test() {
+                char buf[256];
+                memset(buf, 0, sizeof(buf));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofOfOtherVariable") {
+    // The sizeof is taken of a different variable, not the buffer
+    // passed as arg 0. Unlikely to be a bug.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneSizeofPointerInMemfuncRule>(),
+        R"cpp(
+            extern "C" void *memcpy(void*, const void*, unsigned long);
+            struct T { int field; };
+            void test(T *dst, const T *src) {
+                T record;
+                memcpy(dst, src, sizeof(record));
             }
         )cpp");
 
