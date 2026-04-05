@@ -6,35 +6,111 @@ ASTHarbor currently ships local, deterministic AST matcher rules in the same bro
 
 ## Current Rules
 
-| Rule ID | What it detects | Comparable check |
-| --- | --- |
-| `modernize/use-nullptr` | `NULL` used where `nullptr` should be used. | `clang-tidy` `modernize-use-nullptr` |
-| `modernize/use-override` | Overriding virtual methods that do not spell the `override` keyword. | `clang-tidy` `modernize-use-override` |
-| `bugprone/assignment-in-condition` | Assignments used directly inside `if`/`while`/`do`/`for` conditions. | `clang-tidy` `bugprone-assignment-in-if-condition` |
-| `bugprone/identical-expressions` | The same variable referenced on both sides of a comparison or arithmetic operator. | Similar to `clang-tidy` / PVS expression sanity checks |
-| `bugprone/suspicious-memset` | `memset` where the size argument is `sizeof(pointer)`. | Similar to `clang-tidy` `bugprone-sizeof-expression` / memory-misuse checks |
-| `bugprone/suspicious-semicolon` | `if` statements whose body is only a stray semicolon. | `clang-tidy` `bugprone-suspicious-semicolon` |
+Rules are grouped by category. Tier 2 rules use CFG-based dataflow
+(`include/astharbor/cfg_reachability.hpp`); everything else is a
+pure AST matcher.
+
+### `ub/` — Undefined behavior
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `ub/c-style-cast-pointer-punning` | C-style cast reinterpreting a pointer between unrelated types. | MISRA C 11.3, CERT EXP39-C |
+| `ub/casting-through-void` | `reinterpret_cast` routed through `void*` to launder a pointer. | CERT EXP36-C |
+| `ub/dangling-reference` | Returning a reference / address to a local whose storage ends at return. | CERT DCL30-C, CWE-562 |
+| `ub/delete-non-virtual-dtor` | `delete` through a base pointer whose class has no virtual destructor. | CERT OOP52-CPP, CWE-1079 |
+| `ub/division-by-zero-literal` | Division or modulo by a compile-time zero literal. | CERT INT33-C, CWE-369 |
+| `ub/double-free-local` | **(CFG)** Same local pointer passed to `delete` twice without reassignment. | CERT MEM30-C, CWE-415 |
+| `ub/implicit-widening-multiplication` | Narrow-typed multiplication whose result is then widened — overflow before the widen. | CERT INT18-C, CWE-190 |
+| `ub/missing-return-in-non-void` | Non-`void` function with a control-flow path that exits without `return`. | CERT MSC37-C, CWE-758 |
+| `ub/move-of-const` | `std::move` on a `const` lvalue — silently produces a copy, not a move. | `clang-tidy` `performance-move-const-arg` |
+| `ub/new-delete-array-mismatch` | `delete` paired with `new[]` or `delete[]` paired with `new`. | CERT MEM51-CPP, CWE-762 |
+| `ub/noreturn-function-returns` | A `[[noreturn]]` function with a control-flow path that can return. | CERT MSC53-CPP |
+| `ub/null-deref-after-check` | **(CFG)** Pointer dereferenced inside the then-branch of a null check. | CERT EXP34-C, CWE-476 |
+| `ub/pointer-arithmetic-on-polymorphic` | Array subscripting / pointer arithmetic on a pointer-to-base type. | CERT CTR56-CPP, CWE-843 |
+| `ub/reinterpret-cast-type-punning` | `reinterpret_cast` between unrelated object types — strict-aliasing violation. | CERT EXP39-C, CWE-843 |
+| `ub/shift-by-negative` | Left/right shift by a negative compile-time constant. | CERT INT34-C, CWE-1335 |
+| `ub/shift-past-bitwidth` | Shift whose RHS is ≥ the LHS bit width (compile-time constant). | CERT INT34-C, CWE-1335 |
+| `ub/sizeof-array-parameter` | `sizeof(parm)` where `parm` is a decayed array parameter — returns pointer size. | CERT EXP01-C |
+| `ub/static-array-oob-constant` | Constant array index that is outside the declared bounds. | CERT ARR30-C, CWE-125 |
+| `ub/uninitialized-local` | **(CFG)** Read of a local scalar reachable on a path with no prior write. | CERT EXP33-C, CWE-457 |
+| `ub/use-after-move` | **(CFG)** Use of a local variable after `std::move` with no intervening reassignment. | `clang-tidy` `bugprone-use-after-move` |
+
+### `security/` — Security and CWE-mapped
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `security/deprecated-crypto-call` | Calls to weak crypto APIs: MD5, SHA1, RC4, DES. | CERT MSC41-C, CWE-327 |
+| `security/integer-overflow-in-malloc` | `malloc`/`realloc` size argument is an unsigned multiplication that can wrap. | CERT INT30-C, CWE-190 |
+| `security/integer-signedness-mismatch` | Comparisons between signed and unsigned integer types. | CERT INT02-C, CWE-195 |
+| `security/large-stack-array` | Local fixed-size arrays exceeding 4096 bytes. | CERT MEM05-C, CWE-121 |
+| `security/missing-return-value-check` | Privilege-dropping calls (`setuid`/`setgid`) with unchecked return value. | CERT POS36-C, CWE-273 |
+| `security/no-alloca` | Calls to `alloca()` — unbounded stack allocation. | CERT MEM05-C, CWE-770 |
+| `security/no-atoi-atol-atof` | `atoi`/`atol`/`atoll`/`atof` — no way to distinguish errors from valid zero. | CERT ERR07-C, CWE-20 |
+| `security/no-gets` | `gets()` — unbounded read, removed from C11. | CERT MSC24-C, CWE-120 |
+| `security/no-rand` | `rand`/`srand`/`random` — cryptographically weak PRNGs. | CERT MSC30-C, CWE-338 |
+| `security/no-scanf-without-width` | `scanf`-family with bare `%s` (no field width). | CERT MSC24-C, CWE-120 |
+| `security/no-signal` | Calls to `signal()` instead of `sigaction()`. | CERT SIG34-C, CWE-364 |
+| `security/no-sprintf` | `sprintf()` — unbounded writes. | CERT MSC24-C, CWE-120 |
+| `security/no-strcpy-strcat` | `strcpy`/`strcat`/`wcscpy`/`wcscat` — unbounded string copies. | CERT STR31-C, CWE-120 |
+| `security/no-system-call` | `system()` — command injection risk. | CERT ENV33-C, CWE-78 |
+| `security/signed-arith-in-alloc` | Signed integer arithmetic (`+`/`-`/`*`) used as allocation size. | CERT INT32-C, CWE-190 |
+| `security/unchecked-realloc` | `p = realloc(p, n)` leaks `p` on allocation failure. | CERT MEM04-C, CWE-401 |
+| `security/unsafe-printf-format` | Non-literal format string in `printf`-family calls. | CERT FIO30-C, CWE-134 |
+| `security/unsafe-temp-file` | `tmpnam`/`tempnam`/`mktemp` — predictable / race-prone temp files. | CERT FIO21-C, CWE-377 |
+
+### `bugprone/` — Suspicious patterns and common mistakes
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `bugprone/assignment-in-condition` | Assignments used inside `if`/`while`/`do`/`for` conditions. | CERT EXP45-C, `clang-tidy` `bugprone-assignment-in-if-condition` |
+| `bugprone/char-eof-comparison` | `getchar`/`getc`/`fgetc` return narrowed to `char` — loses EOF sentinel. | CERT FIO34-C, CWE-197 |
+| `bugprone/identical-expressions` | The same variable on both sides of a comparison or arithmetic operator. | PVS-like expression sanity check |
+| `bugprone/sizeof-pointer-in-memfunc` | `memcpy`/`memmove`/etc. with `sizeof(ptr)` for the length. | CERT EXP01-C, CWE-467 |
+| `bugprone/suspicious-memset` | `memset` with `sizeof(pointer)` as the size. | `clang-tidy` `bugprone-sizeof-expression` |
+| `bugprone/suspicious-semicolon` | `if` statement whose body is only a stray `;`. | `clang-tidy` `bugprone-suspicious-semicolon` |
+| `bugprone/swapped-arguments` | Argument variable names cross-match the callee's parameter names. | `clang-tidy` `readability-named-parameter`-adjacent |
 | `bugprone/unsafe-memory-operation` | `memset`/`memcpy`/`memmove` on non-trivially-copyable objects. | `clang-tidy` `bugprone-undefined-memory-manipulation` |
-| `performance/for-loop-copy` | Range-for loop variables that copy record types instead of using a reference. | `clang-tidy` `performance-for-range-copy` |
-| `readability/container-size-empty` | Container `size()` checks against zero instead of `empty()`. | `clang-tidy` `readability-container-size-empty` |
+
+### `resource/` — RAII / ownership
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `resource/leak-on-throw` | **(CFG)** Raw-new'd local pointer not deleted before a reachable `throw`. | CERT MEM31-C, CWE-401 |
+
+### `modernize/` — Modernization
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `modernize/use-nullptr` | `NULL` or `0` used where `nullptr` should be used. | `clang-tidy` `modernize-use-nullptr` |
+| `modernize/use-override` | Overriding virtual methods that don't spell the `override` keyword. | `clang-tidy` `modernize-use-override` |
+
+### `performance/`
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `performance/for-loop-copy` | Range-for loop variables copying record types instead of binding a reference. | `clang-tidy` `performance-for-range-copy` |
+| `performance/string-concat-in-loop` | `s = s + other` on a `std::basic_string` inside a loop — quadratic. | `clang-tidy` `performance-inefficient-string-concatenation` |
+
+### `readability/`
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
 | `readability/const-return-type` | Functions returning `const` value types that inhibit moves. | `clang-tidy` `readability-const-return-type` |
-| `security/no-gets` | Calls to `gets()`, which has no bounds checking and was removed from C11. | CERT-C MSC24-C, CWE-120 |
-| `security/unsafe-temp-file` | Calls to `tmpnam()`, `tempnam()`, `mktemp()` — predictable/race-prone temp files. | CERT-C FIO21-C, CWE-377 |
-| `security/unsafe-printf-format` | Non-literal format string in `printf`-family calls. | CERT-C FIO30-C, CWE-134 |
-| `security/no-sprintf` | Calls to `sprintf()` which performs unbounded writes. | CERT-C MSC24-C, CWE-120 |
-| `security/no-strcpy-strcat` | Calls to `strcpy()`, `strcat()`, `wcscpy()`, `wcscat()` — unbounded string copies. | CERT-C STR31-C, CWE-120 |
-| `security/unchecked-realloc` | `p = realloc(p, n)` pattern that leaks on failure. | CERT-C MEM04-C, CWE-401 |
-| `security/no-system-call` | Calls to `system()` — command injection risk. | CERT-C ENV33-C, CWE-78 |
-| `security/no-atoi-atol-atof` | Calls to `atoi()`, `atol()`, `atoll()`, `atof()` — no error distinction. | CERT-C ERR07-C, CWE-20 |
-| `security/deprecated-crypto-call` | Calls to weak crypto APIs: MD5, SHA1, RC4, DES. | CERT-C MSC41-C, CWE-327 |
-| `security/no-alloca` | Calls to `alloca()` — stack allocation with no overflow protection. | CERT-C MEM05-C, CWE-770 |
-| `security/no-signal` | Calls to `signal()` instead of `sigaction()`. | CERT-C SIG34-C, CWE-364 |
-| `security/no-rand` | Calls to `rand()`, `srand()`, `random()` — weak PRNGs. | CERT-C MSC30-C, CWE-338 |
-| `security/missing-return-value-check` | Privilege-dropping calls (`setuid`/`setgid`) with unchecked return value. | CERT-C POS36-C, CWE-273 |
-| `security/no-scanf-without-width` | `scanf`-family with bare `%s` (no field width) — buffer overflow risk. | CERT-C MSC24-C, CWE-120 |
-| `security/signed-arith-in-alloc` | Signed integer arithmetic used as allocation size argument. | CERT-C INT32-C, CWE-190 |
-| `security/large-stack-array` | Local fixed-size arrays exceeding 4096 bytes — stack overflow risk. | CERT-C MEM05-C, CWE-121 |
-| `security/integer-signedness-mismatch` | Comparisons between signed and unsigned integer types. | CERT-C INT02-C, CWE-195 |
+| `readability/container-size-empty` | Container `size()` compared to zero instead of `empty()`. | `clang-tidy` `readability-container-size-empty` |
+| `readability/use-using-alias` | `typedef` used where a C++11 `using` alias is clearer. | `clang-tidy` `modernize-use-using` |
+
+### `portability/`
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `portability/vla-in-cxx` | Variable-length arrays in C++ — not portable, not in ISO C++. | `clang-tidy` `cppcoreguidelines-avoid-c-arrays` |
+
+### `best-practice/`
+
+| Rule ID | What it detects | Reference |
+| --- | --- | --- |
+| `best-practice/explicit-single-arg-ctor` | Single-argument constructors not marked `explicit`. | `clang-tidy` `google-explicit-constructor` |
+| `best-practice/no-raw-new-delete` | Raw `new`/`delete` in user code — prefer smart pointers. | `clang-tidy` `cppcoreguidelines-owning-memory` |
 
 ## Similar Tools And What They Detect
 
