@@ -159,7 +159,7 @@ static bool ruleIsEnabled(const std::string &ruleId,
                           const std::vector<std::string> &negative) {
     bool enabled = positive.empty(); // start all-on iff no positive patterns
     for (const auto &pattern : positive) {
-        if (ruleId.find(pattern) != std::string::npos) {
+        if (ruleId.contains(pattern)) {
             enabled = true;
             break;
         }
@@ -168,7 +168,7 @@ static bool ruleIsEnabled(const std::string &ruleId,
         return false;
     }
     for (const auto &pattern : negative) {
-        if (ruleId.find(pattern) != std::string::npos) {
+        if (ruleId.contains(pattern)) {
             return false;
         }
     }
@@ -350,7 +350,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
 
     // Determine worker count. Single-file or --jobs=1 uses the sequential
     // path so we don't pay thread-startup overhead for tiny analyses.
-    unsigned requestedJobs = std::max(1u, Jobs.getValue());
+    unsigned requestedJobs = std::max(1U, Jobs.getValue());
     unsigned workerCount =
         std::min<unsigned>(requestedJobs, static_cast<unsigned>(sourcePaths.size()));
     if (workerCount == 0) {
@@ -483,12 +483,13 @@ int main(int argc, const char **argv) {
 
         std::unique_ptr<IEmitter> emitter;
         std::string formatValue = Format.getValue();
-        if (formatValue == "json")
+        if (formatValue == "json") {
             emitter = std::make_unique<JsonEmitter>();
-        else if (formatValue == "sarif")
+        } else if (formatValue == "sarif") {
             emitter = std::make_unique<SarifEmitter>(&registry);
-        else
+        } else {
             emitter = std::make_unique<TextEmitter>();
+        }
 
         emitter->emit(result, std::cout);
         if (savedRun && formatValue == "text") {
@@ -496,7 +497,8 @@ int main(int argc, const char **argv) {
         }
         return exitCode;
 
-    } else if (command == "fix") {
+    }
+    if (command == "fix") {
         // Call setupParser first so that cl::opt values (including --run-id,
         // --finding-id, --rule, --apply, etc.) are populated before we branch.
         auto parser = setupParser(argc, argv);
@@ -531,7 +533,7 @@ int main(int argc, const char **argv) {
             if (finding.fixes.empty()) {
                 continue;
             }
-            if (!rulePattern.empty() && finding.ruleId.find(rulePattern) == std::string::npos) {
+            if (!rulePattern.empty() && !finding.ruleId.contains(rulePattern)) {
                 continue;
             }
             if (!findingIdFilter.empty() && finding.findingId != findingIdFilter) {
@@ -573,33 +575,32 @@ int main(int argc, const char **argv) {
                 }
             }
             return applyResult.errors.empty() ? 0 : 2;
-        } else {
-            // Preview mode (default or --dry-run)
-            if (Format.getValue() == "json") {
-                // Output fixable findings as JSON using the standard emitter
-                AnalysisResult fixableResult;
-                fixableResult.runId = result.runId;
-                fixableResult.success = result.success;
-                fixableResult.findings = fixableFindings;
-                JsonEmitter jsonEmitter;
-                jsonEmitter.emit(fixableResult, std::cout);
-            } else {
-                FixApplicator::preview(fixableFindings, std::cout);
-            }
-            return 0;
         }
+        // Preview mode (default or --dry-run).
+        if (Format.getValue() == "json") {
+            AnalysisResult fixableResult;
+            fixableResult.runId = result.runId;
+            fixableResult.success = result.success;
+            fixableResult.findings = fixableFindings;
+            JsonEmitter jsonEmitter;
+            jsonEmitter.emit(fixableResult, std::cout);
+        } else {
+            FixApplicator::preview(fixableFindings, std::cout);
+        }
+        return 0;
 
-    } else if (command == "rules") {
+    }
+    if (command == "rules") {
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
             std::cout << "[\n";
             const auto &rules = registry.getRules();
             for (size_t index = 0; index < rules.size(); ++index) {
                 const auto &rule = rules[index];
-                std::cout << "  {\"id\": \"" << rule->id() << "\", \"title\": \""
-                          << rule->title() << "\", \"category\": \"" << rule->category()
-                          << "\", \"severity\": \"" << rule->defaultSeverity()
-                          << "\", \"summary\": \"" << rule->summary() << "\"}";
+                std::cout << R"(  {"id": ")" << rule->id() << R"(", "title": ")" << rule->title()
+                          << R"(", "category": ")" << rule->category() << R"(", "severity": ")"
+                          << rule->defaultSeverity() << R"(", "summary": ")" << rule->summary()
+                          << "\"}";
                 if (index + 1 < rules.size()) {
                     std::cout << ",";
                 }
@@ -615,7 +616,8 @@ int main(int argc, const char **argv) {
         }
         return 0;
 
-    } else if (command == "doctor") {
+    }
+    if (command == "doctor") {
         bool healthy = true;
         std::string databaseError;
         auto compilationDb = CompilationDatabase::loadFromDirectory(".", databaseError);
@@ -641,7 +643,8 @@ int main(int argc, const char **argv) {
         }
         return healthy ? 0 : 1;
 
-    } else if (command == "compare") {
+    }
+    if (command == "compare") {
         if (argc < 3) {
             llvm::errs() << "Usage: astharbor compare <file>\n";
             return 2;
@@ -675,8 +678,7 @@ int main(int argc, const char **argv) {
             char buffer[1024];
             while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
                 std::string line = buffer;
-                if (line.find("warning:") != std::string::npos ||
-                    line.find("error:") != std::string::npos) {
+                if (line.contains("warning:") || line.contains("error:")) {
                     warningCount++;
                 }
             }
@@ -691,13 +693,12 @@ int main(int argc, const char **argv) {
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
             std::cout << "{\n";
-            std::cout << "  \"file\": \"" << sourceFile << "\",\n";
-            std::cout << "  \"clang\": {\"available\": " << (clangExit >= 0 ? "true" : "false")
+            std::cout << R"(  "file": ")" << sourceFile << "\",\n";
+            std::cout << R"(  "clang": {"available": )" << (clangExit >= 0 ? "true" : "false")
                       << ", \"exit\": " << clangExit << ", \"diagnostics\": " << clangDiags
                       << "},\n";
-            std::cout << "  \"gcc\": {\"available\": " << (gccExit >= 0 ? "true" : "false")
-                      << ", \"exit\": " << gccExit << ", \"diagnostics\": " << gccDiags
-                      << "},\n";
+            std::cout << R"(  "gcc": {"available": )" << (gccExit >= 0 ? "true" : "false")
+                      << ", \"exit\": " << gccExit << ", \"diagnostics\": " << gccDiags << "},\n";
             std::cout << "  \"agreement\": "
                       << (clangExit == gccExit && clangDiags == gccDiags ? "true" : "false")
                       << "\n";

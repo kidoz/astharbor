@@ -8,24 +8,36 @@ namespace astharbor {
 static std::string escapeJson(const std::string &input) {
     std::ostringstream stream;
     for (char c : input) {
-        if (c == '"')
+        switch (c) {
+        case '"':
             stream << "\\\"";
-        else if (c == '\\')
+            break;
+        case '\\':
             stream << "\\\\";
-        else if (c == '\b')
+            break;
+        case '\b':
             stream << "\\b";
-        else if (c == '\f')
+            break;
+        case '\f':
             stream << "\\f";
-        else if (c == '\n')
+            break;
+        case '\n':
             stream << "\\n";
-        else if (c == '\r')
+            break;
+        case '\r':
             stream << "\\r";
-        else if (c == '\t')
+            break;
+        case '\t':
             stream << "\\t";
-        else if ('\x00' <= c && c <= '\x1f') {
-            stream << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)c;
-        } else {
-            stream << c;
+            break;
+        default:
+            if ('\x00' <= c && c <= '\x1f') {
+                stream << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                       << static_cast<int>(c);
+            } else {
+                stream << c;
+            }
+            break;
         }
     }
     return stream.str();
@@ -73,21 +85,20 @@ void SarifEmitter::emit(const AnalysisResult &result, std::ostream &out) {
         const Rule *rule = orderedRules[i];
         out << (i == 0 ? "\n" : ",\n");
         out << "            {\n";
-        out << "              \"id\": \"" << escapeJson(rule->id()) << "\",\n";
-        out << "              \"name\": \"" << escapeJson(rule->title()) << "\",\n";
+        out << R"(              "id": ")" << escapeJson(rule->id()) << "\",\n";
+        out << R"(              "name": ")" << escapeJson(rule->title()) << "\",\n";
         out << "              \"shortDescription\": {\n";
-        out << "                \"text\": \"" << escapeJson(rule->summary()) << "\"\n";
+        out << R"(                "text": ")" << escapeJson(rule->summary()) << "\"\n";
         out << "              },\n";
         out << "              \"fullDescription\": {\n";
-        out << "                \"text\": \"" << escapeJson(rule->summary()) << "\"\n";
+        out << R"(                "text": ")" << escapeJson(rule->summary()) << "\"\n";
         out << "              },\n";
         out << "              \"defaultConfiguration\": {\n";
-        out << "                \"level\": \"" << toSarifLevel(rule->defaultSeverity())
-            << "\"\n";
+        out << R"(                "level": ")" << toSarifLevel(rule->defaultSeverity()) << "\"\n";
         out << "              },\n";
         out << "              \"properties\": {\n";
-        out << "                \"category\": \"" << escapeJson(rule->category()) << "\",\n";
-        out << "                \"tags\": [\"" << escapeJson(rule->category()) << "\"]\n";
+        out << R"(                "category": ")" << escapeJson(rule->category()) << "\",\n";
+        out << R"(                "tags": [")" << escapeJson(rule->category()) << "\"]\n";
         out << "              }\n";
         out << "            }";
     }
@@ -102,20 +113,20 @@ void SarifEmitter::emit(const AnalysisResult &result, std::ostream &out) {
         const auto &finding = result.findings[i];
         out << (i == 0 ? "\n" : ",\n");
         out << "        {\n";
-        out << "          \"ruleId\": \"" << escapeJson(finding.ruleId) << "\",\n";
+        out << R"(          "ruleId": ")" << escapeJson(finding.ruleId) << "\",\n";
         auto indexIt = ruleIndex.find(finding.ruleId);
         if (indexIt != ruleIndex.end()) {
             out << "          \"ruleIndex\": " << indexIt->second << ",\n";
         }
-        out << "          \"level\": \"" << toSarifLevel(finding.severity) << "\",\n";
+        out << R"(          "level": ")" << toSarifLevel(finding.severity) << "\",\n";
         out << "          \"message\": {\n";
-        out << "            \"text\": \"" << escapeJson(finding.message) << "\"\n";
+        out << R"(            "text": ")" << escapeJson(finding.message) << "\"\n";
         out << "          },\n";
         out << "          \"locations\": [\n";
         out << "            {\n";
         out << "              \"physicalLocation\": {\n";
         out << "                \"artifactLocation\": {\n";
-        out << "                  \"uri\": \"file://" << escapeJson(finding.file) << "\"\n";
+        out << R"(                  "uri": "file://)" << escapeJson(finding.file) << "\"\n";
         out << "                },\n";
         out << "                \"region\": {\n";
         out << "                  \"startLine\": " << finding.line << ",\n";
@@ -125,8 +136,8 @@ void SarifEmitter::emit(const AnalysisResult &result, std::ostream &out) {
         out << "            }\n";
         out << "          ],\n";
         out << "          \"properties\": {\n";
-        out << "            \"findingId\": \"" << escapeJson(finding.findingId) << "\",\n";
-        out << "            \"category\": \"" << escapeJson(finding.category) << "\"\n";
+        out << R"(            "findingId": ")" << escapeJson(finding.findingId) << "\",\n";
+        out << R"(            "category": ")" << escapeJson(finding.category) << "\"\n";
         out << "          }";
         if (!finding.fixes.empty()) {
             out << ",\n          \"fixes\": [";
@@ -135,13 +146,13 @@ void SarifEmitter::emit(const AnalysisResult &result, std::ostream &out) {
                 out << (j == 0 ? "\n" : ",\n");
                 out << "            {\n";
                 out << "              \"description\": {\n";
-                out << "                \"text\": \"" << escapeJson(fix.description)
+                out << R"(                "text": ")" << escapeJson(fix.description)
                     << " [safety=" << escapeJson(fix.safety) << "]\"\n";
                 out << "              },\n";
                 out << "              \"artifactChanges\": [\n";
                 out << "                {\n";
                 out << "                  \"artifactLocation\": {\n";
-                out << "                    \"uri\": \"file://" << escapeJson(finding.file)
+                out << R"(                    "uri": "file://)" << escapeJson(finding.file)
                     << "\"\n";
                 out << "                  },\n";
                 out << "                  \"replacements\": [\n";
@@ -151,8 +162,8 @@ void SarifEmitter::emit(const AnalysisResult &result, std::ostream &out) {
                 out << "                        \"charLength\": " << fix.length << "\n";
                 out << "                      },\n";
                 out << "                      \"insertedContent\": {\n";
-                out << "                        \"text\": \""
-                    << escapeJson(fix.replacementText) << "\"\n";
+                out << R"(                        "text": ")" << escapeJson(fix.replacementText)
+                    << "\"\n";
                 out << "                      }\n";
                 out << "                    }\n";
                 out << "                  ]\n";

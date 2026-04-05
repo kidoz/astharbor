@@ -7,24 +7,36 @@ namespace astharbor {
 static std::string escapeJson(const std::string &input) {
     std::ostringstream stream;
     for (char c : input) {
-        if (c == '"')
+        switch (c) {
+        case '"':
             stream << "\\\"";
-        else if (c == '\\')
+            break;
+        case '\\':
             stream << "\\\\";
-        else if (c == '\b')
+            break;
+        case '\b':
             stream << "\\b";
-        else if (c == '\f')
+            break;
+        case '\f':
             stream << "\\f";
-        else if (c == '\n')
+            break;
+        case '\n':
             stream << "\\n";
-        else if (c == '\r')
+            break;
+        case '\r':
             stream << "\\r";
-        else if (c == '\t')
+            break;
+        case '\t':
             stream << "\\t";
-        else if ('\x00' <= c && c <= '\x1f') {
-            stream << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)c;
-        } else {
-            stream << c;
+            break;
+        default:
+            if ('\x00' <= c && c <= '\x1f') {
+                stream << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                       << static_cast<int>(c);
+            } else {
+                stream << c;
+            }
+            break;
         }
     }
     return stream.str();
@@ -32,28 +44,28 @@ static std::string escapeJson(const std::string &input) {
 
 void JsonEmitter::emit(const AnalysisResult &result, std::ostream &out) {
     out << "{\n";
-    out << "  \"runId\": \"" << escapeJson(result.runId) << "\",\n";
+    out << R"(  "runId": ")" << escapeJson(result.runId) << "\",\n";
     out << "  \"success\": " << (result.success ? "true" : "false") << ",\n";
     out << "  \"findings\": [\n";
     for (size_t i = 0; i < result.findings.size(); ++i) {
         const auto &finding = result.findings[i];
         out << "    {\n";
-        out << "      \"findingId\": \"" << escapeJson(finding.findingId) << "\",\n";
-        out << "      \"ruleId\": \"" << escapeJson(finding.ruleId) << "\",\n";
-        out << "      \"severity\": \"" << escapeJson(finding.severity) << "\",\n";
-        out << "      \"category\": \"" << escapeJson(finding.category) << "\",\n";
-        out << "      \"message\": \"" << escapeJson(finding.message) << "\",\n";
-        out << "      \"file\": \"" << escapeJson(finding.file) << "\",\n";
+        out << R"(      "findingId": ")" << escapeJson(finding.findingId) << "\",\n";
+        out << R"(      "ruleId": ")" << escapeJson(finding.ruleId) << "\",\n";
+        out << R"(      "severity": ")" << escapeJson(finding.severity) << "\",\n";
+        out << R"(      "category": ")" << escapeJson(finding.category) << "\",\n";
+        out << R"(      "message": ")" << escapeJson(finding.message) << "\",\n";
+        out << R"(      "file": ")" << escapeJson(finding.file) << "\",\n";
         out << "      \"line\": " << finding.line << ",\n";
         out << "      \"column\": " << finding.column << ",\n";
         out << "      \"fixes\": [";
         for (size_t j = 0; j < finding.fixes.size(); ++j) {
             const auto &fix = finding.fixes[j];
             out << "\n        {\n";
-            out << "          \"fixId\": \"" << escapeJson(fix.fixId) << "\",\n";
-            out << "          \"description\": \"" << escapeJson(fix.description) << "\",\n";
-            out << "          \"safety\": \"" << escapeJson(fix.safety) << "\",\n";
-            out << "          \"replacementText\": \"" << escapeJson(fix.replacementText)
+            out << R"(          "fixId": ")" << escapeJson(fix.fixId) << "\",\n";
+            out << R"(          "description": ")" << escapeJson(fix.description) << "\",\n";
+            out << R"(          "safety": ")" << escapeJson(fix.safety) << "\",\n";
+            out << R"(          "replacementText": ")" << escapeJson(fix.replacementText)
                 << "\",\n";
             out << "          \"offset\": " << fix.offset << ",\n";
             out << "          \"length\": " << fix.length << "\n";
