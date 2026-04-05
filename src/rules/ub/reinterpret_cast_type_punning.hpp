@@ -100,9 +100,17 @@ class UbReinterpretCastTypePunningRule : public Rule {
         if (unqualified->isCharType()) {
             return true;
         }
-        // std::byte — check by type name since it's a scoped enum in <cstddef>.
-        std::string name = unqualified.getAsString();
-        return name == "std::byte" || name == "byte";
+        // std::byte is a scoped enum in <cstddef>. Check via EnumDecl to
+        // avoid allocating a std::string on every hot-path match.
+        if (const auto *enumType = unqualified->getAs<clang::EnumType>()) {
+            if (const auto *enumDecl = enumType->getDecl()) {
+                llvm::StringRef name = enumDecl->getName();
+                if (name == "byte") {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 };
 

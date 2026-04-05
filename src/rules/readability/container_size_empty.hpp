@@ -1,6 +1,5 @@
 #pragma once
 #include "astharbor/rule.hpp"
-#include <clang/Basic/CharInfo.h>
 #include <clang/Lex/Lexer.h>
 
 namespace astharbor {
@@ -125,7 +124,8 @@ class ReadabilityContainerSizeEmptyRule : public Rule {
         expr = expr->IgnoreParenImpCasts();
         if (const auto *call = llvm::dyn_cast<clang::CXXMemberCallExpr>(expr)) {
             if (const auto *method = call->getMethodDecl()) {
-                return method->getNameAsString() == "size";
+                auto name = method->getDeclName();
+                return name.isIdentifier() && method->getName() == "size";
             }
         }
         return false;

@@ -118,29 +118,29 @@ class RunStore {
                     continue;
                 }
                 Finding finding;
-                if (auto v = findingObj->getString("findingId")) {
-                    finding.findingId = v->str();
+                if (auto field = findingObj->getString("findingId")) {
+                    finding.findingId = field->str();
                 }
-                if (auto v = findingObj->getString("ruleId")) {
-                    finding.ruleId = v->str();
+                if (auto field = findingObj->getString("ruleId")) {
+                    finding.ruleId = field->str();
                 }
-                if (auto v = findingObj->getString("severity")) {
-                    finding.severity = v->str();
+                if (auto field = findingObj->getString("severity")) {
+                    finding.severity = field->str();
                 }
-                if (auto v = findingObj->getString("category")) {
-                    finding.category = v->str();
+                if (auto field = findingObj->getString("category")) {
+                    finding.category = field->str();
                 }
-                if (auto v = findingObj->getString("message")) {
-                    finding.message = v->str();
+                if (auto field = findingObj->getString("message")) {
+                    finding.message = field->str();
                 }
-                if (auto v = findingObj->getString("file")) {
-                    finding.file = v->str();
+                if (auto field = findingObj->getString("file")) {
+                    finding.file = field->str();
                 }
-                if (auto v = findingObj->getInteger("line")) {
-                    finding.line = static_cast<int>(*v);
+                if (auto field = findingObj->getInteger("line")) {
+                    finding.line = static_cast<int>(*field);
                 }
-                if (auto v = findingObj->getInteger("column")) {
-                    finding.column = static_cast<int>(*v);
+                if (auto field = findingObj->getInteger("column")) {
+                    finding.column = static_cast<int>(*field);
                 }
                 if (const auto *fixesArray = findingObj->getArray("fixes")) {
                     for (const auto &fixValue : *fixesArray) {
@@ -149,23 +149,23 @@ class RunStore {
                             continue;
                         }
                         Fix fix;
-                        if (auto v = fixObj->getString("fixId")) {
-                            fix.fixId = v->str();
+                        if (auto field = fixObj->getString("fixId")) {
+                            fix.fixId = field->str();
                         }
-                        if (auto v = fixObj->getString("description")) {
-                            fix.description = v->str();
+                        if (auto field = fixObj->getString("description")) {
+                            fix.description = field->str();
                         }
-                        if (auto v = fixObj->getString("safety")) {
-                            fix.safety = v->str();
+                        if (auto field = fixObj->getString("safety")) {
+                            fix.safety = field->str();
                         }
-                        if (auto v = fixObj->getString("replacementText")) {
-                            fix.replacementText = v->str();
+                        if (auto field = fixObj->getString("replacementText")) {
+                            fix.replacementText = field->str();
                         }
-                        if (auto v = fixObj->getInteger("offset")) {
-                            fix.offset = static_cast<int>(*v);
+                        if (auto field = fixObj->getInteger("offset")) {
+                            fix.offset = static_cast<int>(*field);
                         }
-                        if (auto v = fixObj->getInteger("length")) {
-                            fix.length = static_cast<int>(*v);
+                        if (auto field = fixObj->getInteger("length")) {
+                            fix.length = static_cast<int>(*field);
                         }
                         finding.fixes.push_back(std::move(fix));
                     }

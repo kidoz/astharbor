@@ -18,8 +18,11 @@ class UbNoreturnFunctionReturnsRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
+        // Filter to noreturn functions at matching time so the engine does
+        // not visit every function body in the TU just to reject them.
         Finder.addMatcher(
-            functionDecl(isDefinition(), hasDescendant(returnStmt().bind("ret_stmt")))
+            functionDecl(isDefinition(), isNoReturn(),
+                         hasDescendant(returnStmt().bind("ret_stmt")))
                 .bind("func"),
             this);
     }
@@ -27,32 +30,12 @@ class UbNoreturnFunctionReturnsRule : public Rule {
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("func");
         const auto *ReturnStmt = Result.Nodes.getNodeAs<clang::ReturnStmt>("ret_stmt");
-        if (Function == nullptr || ReturnStmt == nullptr || Result.SourceManager == nullptr) {
+        if (Function == nullptr || ReturnStmt == nullptr) {
             return;
         }
-        if (!Function->isNoReturn()) {
-            return;
-        }
-        if (isInSystemHeader(Function->getLocation(), *Result.SourceManager)) {
-            return;
-        }
-
-        Finding finding;
-        finding.ruleId = id();
-        finding.message = "[[noreturn]] function '" + Function->getNameAsString() +
-                          "' contains a return statement — undefined behavior";
-        finding.severity = defaultSeverity();
-        finding.category = category();
-
-        auto &sourceManager = *Result.SourceManager;
-        auto location = sourceManager.getExpansionLoc(ReturnStmt->getBeginLoc());
-        finding.file = sourceManager.getFilename(location).str();
-        finding.line = sourceManager.getSpellingLineNumber(location);
-        finding.column = sourceManager.getSpellingColumnNumber(location);
-
-        if (!finding.file.empty()) {
-            findings.push_back(finding);
-        }
+        emitFinding(ReturnStmt->getBeginLoc(), *Result.SourceManager,
+                    "[[noreturn]] function '" + Function->getNameAsString() +
+                        "' contains a return statement — undefined behavior");
     }
 };
 

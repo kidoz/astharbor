@@ -20,12 +20,15 @@ class UbNewDeleteArrayMismatchRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
+        // Delete expressions typically wrap their operand in an
+        // LValueToRValue ImplicitCastExpr, so `has()` alone is too strict —
+        // use `hasDescendant` to reach the DeclRefExpr through the cast.
         Finder.addMatcher(
             cxxDeleteExpr(
-                has(ignoringParenImpCasts(declRefExpr(to(
+                hasDescendant(declRefExpr(to(
                     varDecl(hasInitializer(
                                 ignoringParenImpCasts(cxxNewExpr().bind("new_expr"))))
-                        .bind("var"))))))
+                        .bind("var")))))
                 .bind("delete_expr"),
             this);
     }

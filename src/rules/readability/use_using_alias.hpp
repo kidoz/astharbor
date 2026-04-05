@@ -32,7 +32,7 @@ class ReadabilityUseUsingAliasRule : public Rule {
         if (isInSystemHeader(Typedef->getLocation(), *Result.SourceManager)) {
             return;
         }
-        // Skip implicit typedefs and typedefs inside templates.
+        // Skip compiler-generated typedefs (injected class names, etc.).
         if (Typedef->isImplicit()) {
             return;
         }
@@ -93,9 +93,13 @@ class ReadabilityUseUsingAliasRule : public Rule {
         unsigned totalLength = endOffset + endTokenLength - beginOffset;
 
         Fix fix;
-        fix.fixId = "fix-using-alias-" + std::to_string(findings.size());
+        fix.fixId = nextFixId("fix-using-alias");
         fix.description = "Rewrite typedef as using-alias";
-        fix.safety = "safe";
+        // `review` rather than `safe`: QualType::getAsString() can produce
+        // forms (elaborated types, anonymous types, types in anonymous
+        // namespaces) that don't round-trip through the parser. A human
+        // should eyeball the rewrite before applying.
+        fix.safety = "review";
         fix.replacementText = replacement;
         fix.offset = static_cast<int>(beginOffset);
         fix.length = static_cast<int>(totalLength);

@@ -21,64 +21,40 @@ class UbPointerArithmeticOnPolymorphicRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            unaryOperator(hasAnyOperatorName("++", "--"),
-                          hasUnaryOperand(expr(hasType(pointerType())).bind("ptr_operand")))
-                .bind("unary_ptr_arith"),
-            this);
+        // Push the polymorphic-record check into the matcher so the AST
+        // visitor short-circuits on non-polymorphic pointer arithmetic
+        // instead of letting every `+`, `-`, `++`, `--`, and `[]` fire the
+        // run() callback.
+        auto polyRecord = cxxRecordDecl(hasMethod(isVirtual())).bind("poly_record");
+        auto polyPointerType = pointerType(pointee(hasDeclaration(polyRecord)));
+
+        Finder.addMatcher(unaryOperator(hasAnyOperatorName("++", "--"),
+                                         hasUnaryOperand(hasType(polyPointerType)))
+                              .bind("unary_ptr_arith"),
+                          this);
         Finder.addMatcher(
             binaryOperator(hasAnyOperatorName("+", "-", "+=", "-="),
-                           hasEitherOperand(expr(hasType(pointerType())).bind("ptr_operand")))
+                           hasEitherOperand(hasType(polyPointerType)))
                 .bind("binary_ptr_arith"),
             this);
-        Finder.addMatcher(
-            arraySubscriptExpr(hasBase(ignoringParenImpCasts(
-                                   expr(hasType(pointerType())).bind("ptr_operand"))))
-                .bind("subscript_ptr_arith"),
-            this);
+        Finder.addMatcher(arraySubscriptExpr(hasBase(ignoringParenImpCasts(
+                                                 hasType(polyPointerType))))
+                              .bind("subscript_ptr_arith"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Operand = Result.Nodes.getNodeAs<clang::Expr>("ptr_operand");
-        if (Operand == nullptr || Result.SourceManager == nullptr) {
-            return;
-        }
-
         const clang::SourceLocation reportLoc = getReportLocation(Result);
-        if (reportLoc.isInvalid() || isInSystemHeader(reportLoc, *Result.SourceManager)) {
+        if (reportLoc.isInvalid()) {
             return;
         }
+        const auto *recordDecl = Result.Nodes.getNodeAs<clang::CXXRecordDecl>("poly_record");
+        std::string recordName = recordDecl != nullptr ? recordDecl->getNameAsString() : "?";
 
-        clang::QualType operandType = Operand->getType();
-        if (!operandType->isPointerType()) {
-            return;
-        }
-        clang::QualType pointeeType = operandType->getPointeeType();
-        const clang::CXXRecordDecl *recordDecl = pointeeType->getAsCXXRecordDecl();
-        if (recordDecl == nullptr || !recordDecl->hasDefinition()) {
-            return;
-        }
-        if (!recordDecl->isPolymorphic()) {
-            return;
-        }
-
-        Finding finding;
-        finding.ruleId = id();
-        finding.message =
-            "Pointer arithmetic on polymorphic type '" + recordDecl->getNameAsString() +
-            "' — if the dynamic type is a derived class, the arithmetic is undefined";
-        finding.severity = defaultSeverity();
-        finding.category = category();
-
-        auto &sourceManager = *Result.SourceManager;
-        auto location = sourceManager.getExpansionLoc(reportLoc);
-        finding.file = sourceManager.getFilename(location).str();
-        finding.line = sourceManager.getSpellingLineNumber(location);
-        finding.column = sourceManager.getSpellingColumnNumber(location);
-
-        if (!finding.file.empty()) {
-            findings.push_back(finding);
-        }
+        emitFinding(reportLoc, *Result.SourceManager,
+                    "Pointer arithmetic on polymorphic type '" + recordName +
+                        "' — if the dynamic type is a derived class, the arithmetic is "
+                        "undefined");
     }
 
   private:

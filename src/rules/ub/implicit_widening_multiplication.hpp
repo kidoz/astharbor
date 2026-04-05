@@ -60,13 +60,12 @@ class UbImplicitWideningMultiplicationRule : public Rule {
             return;
         }
 
-        // Suppress when at least one operand is already a constant that cannot
-        // cause overflow — very common false-positive source.
-        clang::Expr::EvalResult lhsEval;
-        clang::Expr::EvalResult rhsEval;
-        bool lhsConstant = Mul->getLHS()->EvaluateAsInt(lhsEval, context);
-        bool rhsConstant = Mul->getRHS()->EvaluateAsInt(rhsEval, context);
-        if (lhsConstant && rhsConstant) {
+        // Suppress the obvious false positive where both operands are already
+        // compile-time constants — the compiler has folded them and any
+        // overflow is already diagnosed as a constant-expression UB.
+        clang::Expr::EvalResult eval;
+        if (Mul->getLHS()->EvaluateAsInt(eval, context) &&
+            Mul->getRHS()->EvaluateAsInt(eval, context)) {
             return;
         }
 

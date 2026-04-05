@@ -20,11 +20,14 @@ class UbStaticArrayOobConstantRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
+        // Evaluating the index as a constant expression via `EvaluateAsInt`
+        // lets us catch both literal indices (`arr[10]`) and folded negative
+        // forms (`arr[-1]`, which appears in the AST as a unary operator
+        // wrapping an integer literal).
         Finder.addMatcher(
             arraySubscriptExpr(
                 hasBase(ignoringParenImpCasts(
-                    declRefExpr(to(varDecl(hasType(constantArrayType())).bind("array_var"))))),
-                hasIndex(ignoringParenImpCasts(integerLiteral().bind("index_literal"))))
+                    declRefExpr(to(varDecl(hasType(constantArrayType())).bind("array_var"))))))
                 .bind("subscript"),
             this);
     }
@@ -32,49 +35,32 @@ class UbStaticArrayOobConstantRule : public Rule {
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *Subscript = Result.Nodes.getNodeAs<clang::ArraySubscriptExpr>("subscript");
         const auto *ArrayVar = Result.Nodes.getNodeAs<clang::VarDecl>("array_var");
-        const auto *Index = Result.Nodes.getNodeAs<clang::IntegerLiteral>("index_literal");
-
-        if (Subscript == nullptr || ArrayVar == nullptr || Index == nullptr ||
-            Result.SourceManager == nullptr || Result.Context == nullptr) {
-            return;
-        }
-        if (isInSystemHeader(Subscript->getExprLoc(), *Result.SourceManager)) {
+        if (Subscript == nullptr || ArrayVar == nullptr) {
             return;
         }
 
-        const auto *ArrType = Result.Context->getAsConstantArrayType(ArrayVar->getType());
+        auto &context = *Result.Context;
+        const auto *ArrType = context.getAsConstantArrayType(ArrayVar->getType());
         if (ArrType == nullptr) {
             return;
         }
+
+        clang::Expr::EvalResult eval;
+        if (!Subscript->getIdx()->EvaluateAsInt(eval, context)) {
+            return;
+        }
+        llvm::APSInt indexValue = eval.Val.getInt();
+        int64_t signedIndex = indexValue.getExtValue();
         uint64_t arraySize = ArrType->getSize().getZExtValue();
-        llvm::APInt indexValue = Index->getValue();
-
-        bool outOfBounds = false;
-        if (indexValue.isNegative()) {
-            outOfBounds = true;
-        } else if (indexValue.getZExtValue() >= arraySize) {
-            outOfBounds = true;
+        if (signedIndex >= 0 && static_cast<uint64_t>(signedIndex) < arraySize) {
+            return;
         }
 
-        if (outOfBounds) {
-            Finding finding;
-            finding.ruleId = id();
-            finding.message = "Array index " + std::to_string(indexValue.getSExtValue()) +
-                              " is out of bounds for array of size " + std::to_string(arraySize) +
-                              " — undefined behavior";
-            finding.severity = defaultSeverity();
-            finding.category = category();
-
-            auto &sourceManager = *Result.SourceManager;
-            auto location = sourceManager.getExpansionLoc(Subscript->getExprLoc());
-            finding.file = sourceManager.getFilename(location).str();
-            finding.line = sourceManager.getSpellingLineNumber(location);
-            finding.column = sourceManager.getSpellingColumnNumber(location);
-
-            if (!finding.file.empty()) {
-                findings.push_back(finding);
-            }
-        }
+        auto &sourceManager = *Result.SourceManager;
+        emitFinding(Subscript->getExprLoc(), sourceManager,
+                    "Array index " + std::to_string(signedIndex) +
+                        " is out of bounds for array of size " + std::to_string(arraySize) +
+                        " — undefined behavior");
     }
 };
 
