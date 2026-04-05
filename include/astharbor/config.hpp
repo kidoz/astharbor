@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/YAMLTraits.h>
+#include <map>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -17,23 +18,40 @@ namespace astharbor {
 /// Example file:
 ///
 ///     ---
-///     Checks: "modernize-*,ub/*,-ub/sizeof-array-parameter"
+///     Checks: "modernize,ub,-ub/sizeof-array-parameter"
 ///     HeaderFilterRegex: "^src/.*\\.hpp$"
 ///     Jobs: 4
 ///     Std: "c++20"
 ///     CompilerProfile: "auto"
+///     Severity:
+///       modernize/use-nullptr: error
+///       security/no-gets: error
 struct Config {
     std::string checks;
     std::string headerFilterRegex;
     unsigned jobs = 0;
     std::string std;
     std::string compilerProfile;
+    std::map<std::string, std::string> severityOverrides;
 };
 
 } // namespace astharbor
 
 // MappingTraits specialization must appear before Config::load() is defined
 // so the llvm::yaml machinery can find it during template instantiation.
+template <>
+struct llvm::yaml::CustomMappingTraits<std::map<std::string, std::string>> {
+    static void inputOne(llvm::yaml::IO &io, llvm::StringRef key,
+                          std::map<std::string, std::string> &map) {
+        io.mapRequired(key.str().c_str(), map[key.str()]);
+    }
+    static void output(llvm::yaml::IO &io, std::map<std::string, std::string> &map) {
+        for (auto &entry : map) {
+            io.mapRequired(entry.first.c_str(), entry.second);
+        }
+    }
+};
+
 template <> struct llvm::yaml::MappingTraits<astharbor::Config> {
     static void mapping(llvm::yaml::IO &io, astharbor::Config &config) {
         io.mapOptional("Checks", config.checks);
@@ -41,6 +59,7 @@ template <> struct llvm::yaml::MappingTraits<astharbor::Config> {
         io.mapOptional("Jobs", config.jobs);
         io.mapOptional("Std", config.std);
         io.mapOptional("CompilerProfile", config.compilerProfile);
+        io.mapOptional("Severity", config.severityOverrides);
     }
 };
 

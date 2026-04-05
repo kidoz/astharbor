@@ -55,6 +55,13 @@ static llvm::cl::opt<bool>
                            "across the analyzed source set and reports a per-rule breakdown."),
             llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<bool>
+    Verify("verify",
+           llvm::cl::desc("After applying fixes, run `clang++ -fsyntax-only` on each "
+                          "modified file. If any file fails to parse, restore its original "
+                          "content from an in-memory snapshot."),
+           llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+
 static llvm::cl::opt<std::string>
     SaveRun("save-run",
             llvm::cl::desc("Persist the analysis result to disk for later "
@@ -152,6 +159,7 @@ void print_help() {
     std::cout << "  --finding-id=ID     Apply fix only for a specific finding id\n";
     std::cout << "  --backup            Create .bak backup files before modifying\n";
     std::cout << "  --all-safe          Apply every safe fix (alias for --apply) with summary\n";
+    std::cout << "  --verify            Run clang++ -fsyntax-only after apply; roll back on failure\n";
     std::cout << "\nCommon options:\n";
     std::cout << "  --format=FORMAT     Output format: text, json, sarif\n";
 }
@@ -206,6 +214,46 @@ static bool ruleIsEnabled(const std::string &ruleId,
         }
     }
     return true;
+}
+
+/// Read a file's entire contents into a string. Returns nullopt on IO
+/// failure so callers can distinguish "file missing" from "file empty".
+static std::optional<std::string> readFileContent(const std::string &path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return std::nullopt;
+    }
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    return content;
+}
+
+/// Write `content` back to `path`. Returns true on success.
+static bool writeFileContent(const std::string &path, const std::string &content) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        return false;
+    }
+    out << content;
+    return static_cast<bool>(out);
+}
+
+/// Run `clang++ -fsyntax-only` on `path`. Returns true if the file parses
+/// cleanly (exit code 0), false otherwise. Absence of clang++ on the host
+/// is treated as "verification unavailable" — the caller can choose to
+/// proceed. We use popen here for consistency with `compare`.
+static bool syntaxCheckFile(const std::string &path) {
+    std::string command = "clang++ -fsyntax-only -w \"" + path + "\" 2>/dev/null";
+    FILE *pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return true;
+    }
+    // Drain stdout/stderr; we only care about exit code.
+    char buffer[512];
+    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    }
+    int status = pclose(pipe);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 /// Return the set of files reported as modified by `git diff --name-only`
@@ -488,6 +536,18 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
     }
 
+    // Apply .astharbor.yml Severity overrides. The config maps rule IDs to
+    // alternate severity strings, escalating or demoting findings without
+    // touching rule source.
+    if (!projectConfig.severityOverrides.empty()) {
+        for (auto &finding : allFindings) {
+            auto it = projectConfig.severityOverrides.find(finding.ruleId);
+            if (it != projectConfig.severityOverrides.end()) {
+                finding.severity = it->second;
+            }
+        }
+    }
+
     AnalysisResult result;
     result.runId = generateRunId();
     result.success = (worstExitCode == 0);
@@ -649,7 +709,52 @@ int main(int argc, const char **argv) {
         const bool shouldApply =
             (Apply.getValue() || AllSafe.getValue()) && !DryRun.getValue();
         if (shouldApply) {
+            // Snapshot originals before applying so --verify can roll back on
+            // a post-apply syntax failure.
+            std::map<std::string, std::string> originalContents;
+            if (Verify.getValue()) {
+                std::set<std::string> targetFiles;
+                for (const auto &finding : fixableFindings) {
+                    if (!finding.fixes.empty()) {
+                        targetFiles.insert(finding.file);
+                    }
+                }
+                for (const auto &path : targetFiles) {
+                    if (auto content = readFileContent(path)) {
+                        originalContents.emplace(path, std::move(*content));
+                    }
+                }
+            }
+
             auto applyResult = FixApplicator::apply(fixableFindings, Backup.getValue());
+
+            // --verify: re-parse each modified file with clang++. Revert on
+            // any failure so users never ship broken code from a bad fix.
+            int rolledBack = 0;
+            if (Verify.getValue()) {
+                std::vector<std::string> failingFiles;
+                for (const auto &[path, _] : originalContents) {
+                    if (!syntaxCheckFile(path)) {
+                        failingFiles.push_back(path);
+                    }
+                }
+                if (!failingFiles.empty()) {
+                    llvm::errs() << "Warning: --verify detected " << failingFiles.size()
+                                 << " file(s) that no longer parse; rolling back.\n";
+                    for (const auto &path : failingFiles) {
+                        llvm::errs() << "  " << path << "\n";
+                    }
+                    for (const auto &[path, content] : originalContents) {
+                        writeFileContent(path, content);
+                    }
+                    rolledBack = static_cast<int>(originalContents.size());
+                    applyResult.fixesApplied = 0;
+                    applyResult.filesModified = 0;
+                    applyResult.errors.push_back(
+                        "verify failed; rolled back " + std::to_string(rolledBack) +
+                        " file(s)");
+                }
+            }
 
             // Per-rule breakdown: count safe fixes grouped by rule id.
             std::map<std::string, int> perRuleApplied;
