@@ -54,7 +54,7 @@ executable('astharbor',
 )
 
 if get_option('tests')
-  gtest_dep = dependency('gtest', main : true, required : true)
+  catch2_dep = dependency('catch2-with-main', required : true, default_options: ['tests=false'])
 
   test_sources = [
     'tests/unit/test_rule_registry.cpp',
@@ -64,7 +64,7 @@ if get_option('tests')
 
   test_exe = executable('astharbor_test',
     test_sources,
-    dependencies : [astharbor_dep, gtest_dep],
+    dependencies : [astharbor_dep, catch2_dep],
     cpp_args : ['-Wno-character-conversion']
   )
   test('unit tests', test_exe)

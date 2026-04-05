@@ -1,7 +1,7 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "astharbor/rule_registry.hpp"
 
-TEST(RuleRegistryTest, HasBuiltinRules) {
+TEST_CASE("RuleRegistryTest.HasBuiltinRules") {
     astharbor::RuleRegistry registry;
     astharbor::registerBuiltinRules(registry);
     const auto &rules = registry.getRules();
@@ -13,25 +13,25 @@ TEST(RuleRegistryTest, HasBuiltinRules) {
     for (const auto &r : rules) {
         if (r->id() == "modernize/use-nullptr") {
             foundNullptr = true;
-            EXPECT_EQ(r->category(), "modernize");
-            EXPECT_EQ(r->defaultSeverity(), "warning");
+            CHECK((r->category()) == ("modernize"));
+            CHECK((r->defaultSeverity()) == ("warning"));
         } else if (r->id() == "bugprone/assignment-in-condition") {
             foundAssignmentInCondition = true;
-            EXPECT_EQ(r->category(), "bugprone");
-            EXPECT_EQ(r->defaultSeverity(), "warning");
+            CHECK((r->category()) == ("bugprone"));
+            CHECK((r->defaultSeverity()) == ("warning"));
         } else if (r->id() == "bugprone/suspicious-semicolon") {
             foundSuspiciousSemicolon = true;
-            EXPECT_EQ(r->category(), "bugprone");
-            EXPECT_EQ(r->defaultSeverity(), "warning");
+            CHECK((r->category()) == ("bugprone"));
+            CHECK((r->defaultSeverity()) == ("warning"));
         } else if (r->id() == "bugprone/unsafe-memory-operation") {
             foundUnsafeMemoryOperation = true;
-            EXPECT_EQ(r->category(), "bugprone");
-            EXPECT_EQ(r->defaultSeverity(), "error");
+            CHECK((r->category()) == ("bugprone"));
+            CHECK((r->defaultSeverity()) == ("error"));
         }
     }
-    EXPECT_TRUE(foundNullptr);
-    EXPECT_TRUE(foundAssignmentInCondition);
-    EXPECT_TRUE(foundSuspiciousSemicolon);
-    EXPECT_TRUE(foundUnsafeMemoryOperation);
-    EXPECT_GE(rules.size(), 10u);
+    CHECK(foundNullptr);
+    CHECK(foundAssignmentInCondition);
+    CHECK(foundSuspiciousSemicolon);
+    CHECK(foundUnsafeMemoryOperation);
+    CHECK((rules.size()) >= (10u));
 }

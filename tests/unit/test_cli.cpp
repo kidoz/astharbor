@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -9,7 +9,7 @@
 
 using namespace astharbor;
 
-TEST(EmittersTest, JsonEscapesStrings) {
+TEST_CASE("EmittersTest.JsonEscapesStrings") {
     AnalysisResult res;
     res.runId = "test-run";
     Finding f;
@@ -38,15 +38,15 @@ TEST(EmittersTest, JsonEscapesStrings) {
     emitter.emit(res, os);
     std::string json = os.str();
 
-    EXPECT_NE(json.find("\"runId\": \"test-run\""), std::string::npos);
-    EXPECT_NE(json.find("\\\"quotes\\\""), std::string::npos);
-    EXPECT_NE(json.find("C:\\\\path\\\\to\\\\file.cpp"), std::string::npos);
-    EXPECT_NE(json.find("\"severity\": \"warning\""), std::string::npos);
-    EXPECT_NE(json.find("\"category\": \"test\""), std::string::npos);
-    EXPECT_NE(json.find("\"fixes\": ["), std::string::npos);
+    CHECK((json.find("\"runId\": \"test-run\"")) != (std::string::npos));
+    CHECK((json.find("\\\"quotes\\\"")) != (std::string::npos));
+    CHECK((json.find("C:\\\\path\\\\to\\\\file.cpp")) != (std::string::npos));
+    CHECK((json.find("\"severity\": \"warning\"")) != (std::string::npos));
+    CHECK((json.find("\"category\": \"test\"")) != (std::string::npos));
+    CHECK((json.find("\"fixes\": [")) != (std::string::npos));
 }
 
-TEST(EmittersTest, SarifOutputsCorrectly) {
+TEST_CASE("EmittersTest.SarifOutputsCorrectly") {
     AnalysisResult res;
     res.runId = "test-run";
     Finding f;
@@ -62,13 +62,13 @@ TEST(EmittersTest, SarifOutputsCorrectly) {
     emitter.emit(res, os);
     std::string sarif = os.str();
 
-    EXPECT_NE(sarif.find("\"version\": \"2.1.0\""), std::string::npos);
-    EXPECT_NE(sarif.find("\"ruleId\": \"my-rule\""), std::string::npos);
-    EXPECT_NE(sarif.find("Message with \\\"quotes\\\""), std::string::npos);
-    EXPECT_NE(sarif.find("\"uri\": \"file://file.cpp\""), std::string::npos);
+    CHECK((sarif.find("\"version\": \"2.1.0\"")) != (std::string::npos));
+    CHECK((sarif.find("\"ruleId\": \"my-rule\"")) != (std::string::npos));
+    CHECK((sarif.find("Message with \\\"quotes\\\"")) != (std::string::npos));
+    CHECK((sarif.find("\"uri\": \"file://file.cpp\"")) != (std::string::npos));
 }
 
-TEST(RunStoreTest, PersistsAndLoadsDependencies) {
+TEST_CASE("RunStoreTest.PersistsAndLoadsDependencies") {
     // Round-trip a result with a non-empty dependencies map through
     // RunStore::save / RunStore::load. Confirms that --incremental can
     // carry per-TU header dependency lists across runs.
@@ -82,22 +82,22 @@ TEST(RunStoreTest, PersistsAndLoadsDependencies) {
     auto tempPath = std::filesystem::temp_directory_path() /
                     "astharbor_runstore_deps_test.json";
     std::filesystem::remove(tempPath);
-    ASSERT_TRUE(RunStore::save(original, tempPath));
+    REQUIRE(RunStore::save(original, tempPath));
 
     auto loaded = RunStore::load(tempPath);
-    ASSERT_TRUE(loaded.has_value());
-    EXPECT_EQ(loaded->runId, "run-deps-test");
-    EXPECT_EQ(loaded->fileHashes["/abs/main.cpp"], "aaaaaaaaaaaaaaaa");
-    EXPECT_EQ(loaded->fileHashes["/abs/lib.hpp"], "bbbbbbbbbbbbbbbb");
-    ASSERT_EQ(loaded->dependencies.size(), 1u);
+    REQUIRE(loaded.has_value());
+    CHECK((loaded->runId) == ("run-deps-test"));
+    CHECK((loaded->fileHashes["/abs/main.cpp"]) == ("aaaaaaaaaaaaaaaa"));
+    CHECK((loaded->fileHashes["/abs/lib.hpp"]) == ("bbbbbbbbbbbbbbbb"));
+    REQUIRE((loaded->dependencies.size()) == (1u));
     const auto &deps = loaded->dependencies.at("/abs/main.cpp");
-    ASSERT_EQ(deps.size(), 1u);
-    EXPECT_EQ(deps[0], "/abs/lib.hpp");
+    REQUIRE((deps.size()) == (1u));
+    CHECK((deps[0]) == ("/abs/lib.hpp"));
 
     std::filesystem::remove(tempPath);
 }
 
-TEST(RunStoreTest, LoadsRunWithoutDependenciesField) {
+TEST_CASE("RunStoreTest.LoadsRunWithoutDependenciesField") {
     // Ensure backward compatibility: a run file written before the
     // dependencies field existed must still round-trip through load.
     auto tempPath = std::filesystem::temp_directory_path() /
@@ -108,8 +108,8 @@ TEST(RunStoreTest, LoadsRunWithoutDependenciesField) {
                   "findings": [], "fileHashes": {"/a.cpp": "deadbeef"}})";
     }
     auto loaded = RunStore::load(tempPath);
-    ASSERT_TRUE(loaded.has_value());
-    EXPECT_EQ(loaded->runId, "legacy");
-    EXPECT_TRUE(loaded->dependencies.empty());
+    REQUIRE(loaded.has_value());
+    CHECK((loaded->runId) == ("legacy"));
+    CHECK(loaded->dependencies.empty());
     std::filesystem::remove(tempPath);
 }
