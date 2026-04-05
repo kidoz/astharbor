@@ -64,7 +64,7 @@ class UbUninitializedLocalRule : public Rule {
             return;
         }
 
-        auto start = cfg::locateDecl(*cfg, UninitVar);
+        auto start = cfg::locateDecl(Func, UninitVar);
         if (!start) {
             return;
         }

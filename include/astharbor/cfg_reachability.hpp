@@ -298,11 +298,33 @@ forwardReachable(const clang::CFGBlock *startBlock, size_t scanFromIndex,
 // `EndSourceFileAction` does this.
 
 namespace detail {
-inline std::unordered_map<const clang::FunctionDecl *,
-                           std::unique_ptr<clang::CFG>> &
+
+/// Per-function cache entry: the CFG plus three indices populated in a
+/// single pass over the CFG at build time. The indices collapse the
+/// `locateStmt` / `locateDecl` / `locateTerminator` primitives from
+/// O(blocks × elements × subtree) per query to O(1) per query after
+/// the first call for a given function.
+struct CachedCfg {
+    std::unique_ptr<clang::CFG> cfg;
+    /// Map from any `Stmt*` appearing in a CFGStmt's subtree to the
+    /// (block, element index) that owns it. Used by `locateStmt`.
+    std::unordered_map<const clang::Stmt *,
+                        std::pair<const clang::CFGBlock *, size_t>> stmtIndex;
+    /// Map from any local `VarDecl*` declared inside a CFG `DeclStmt`
+    /// to the (block, element index) that owns the declaration. Used
+    /// by `locateDecl`.
+    std::unordered_map<const clang::VarDecl *,
+                        std::pair<const clang::CFGBlock *, size_t>> declIndex;
+    /// Map from a control-flow statement (IfStmt / WhileStmt / etc.)
+    /// to the CFG block whose terminator is that statement. Used by
+    /// `locateTerminator`.
+    std::unordered_map<const clang::Stmt *, const clang::CFGBlock *>
+        terminatorIndex;
+};
+
+inline std::unordered_map<const clang::FunctionDecl *, CachedCfg> &
 threadLocalCfgCache() {
-    thread_local std::unordered_map<const clang::FunctionDecl *,
-                                     std::unique_ptr<clang::CFG>> cache;
+    thread_local std::unordered_map<const clang::FunctionDecl *, CachedCfg> cache;
     return cache;
 }
 
@@ -311,12 +333,39 @@ threadLocalTryCache() {
     thread_local std::unordered_map<const clang::FunctionDecl *, bool> cache;
     return cache;
 }
+
+/// Recursively register every descendant `Stmt*` and every declared
+/// `VarDecl*` under `stmt` as owned by `(block, elementIndex)`. Called
+/// once per CFG element at cache-population time.
+inline void indexStmtSubtree(
+    const clang::Stmt *stmt, const clang::CFGBlock *block, size_t elementIndex,
+    CachedCfg &entry) {
+    if (stmt == nullptr) {
+        return;
+    }
+    entry.stmtIndex.emplace(stmt, std::make_pair(block, elementIndex));
+    if (const auto *declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
+        for (const clang::Decl *decl : declStmt->decls()) {
+            if (const auto *varDecl = llvm::dyn_cast<clang::VarDecl>(decl)) {
+                entry.declIndex.emplace(varDecl,
+                                         std::make_pair(block, elementIndex));
+            }
+        }
+    }
+    for (const clang::Stmt *child : stmt->children()) {
+        indexStmtSubtree(child, block, elementIndex, entry);
+    }
+}
+
 } // namespace detail
 
 /// Return the CFG for `func` from the thread-local cache, building one
 /// on first access. Returns nullptr if the function has no body or the
 /// CFG builder rejects it; the null result is cached too so subsequent
 /// calls don't re-try. Caller must not free the returned pointer.
+///
+/// The first call for a function also builds three O(1)-lookup indices
+/// used by the `locate*` helpers — see the `CachedCfg` comment.
 inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
                                         clang::ASTContext &context) {
     if (func == nullptr || !func->hasBody()) {
@@ -325,13 +374,92 @@ inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
     auto &cache = detail::threadLocalCfgCache();
     auto it = cache.find(func);
     if (it != cache.end()) {
-        return it->second.get();
+        return it->second.cfg.get();
     }
     clang::CFG::BuildOptions options;
     auto cfg = clang::CFG::buildCFG(func, func->getBody(), &context, options);
-    const clang::CFG *result = cfg.get();
-    cache.emplace(func, std::move(cfg));
+    detail::CachedCfg entry;
+    entry.cfg = std::move(cfg);
+    const clang::CFG *result = entry.cfg.get();
+    if (result != nullptr) {
+        for (const clang::CFGBlock *block : *result) {
+            if (block == nullptr) {
+                continue;
+            }
+            for (size_t elementIndex = 0; elementIndex < block->size();
+                 ++elementIndex) {
+                auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
+                if (!cfgStmt) {
+                    continue;
+                }
+                detail::indexStmtSubtree(cfgStmt->getStmt(), block, elementIndex,
+                                          entry);
+            }
+            if (const clang::Stmt *terminator = block->getTerminatorStmt()) {
+                entry.terminatorIndex.emplace(terminator, block);
+            }
+        }
+    }
+    cache.emplace(func, std::move(entry));
     return result;
+}
+
+/// Fast-path `locateStmt` / `locateDecl` / `locateTerminator` overloads
+/// that consult the cache populated by `getOrBuildCfg`. The `func`
+/// argument is the same one the caller passed to `getOrBuildCfg`;
+/// these overloads return `std::nullopt` / `nullptr` if the cache
+/// entry doesn't exist (defensive — in practice rules always call
+/// `getOrBuildCfg` before the locator).
+
+inline std::optional<std::pair<const clang::CFGBlock *, size_t>>
+locateStmt(const clang::FunctionDecl *func, const clang::Stmt *needle) {
+    if (func == nullptr || needle == nullptr) {
+        return std::nullopt;
+    }
+    const auto &cache = detail::threadLocalCfgCache();
+    auto it = cache.find(func);
+    if (it == cache.end()) {
+        return std::nullopt;
+    }
+    auto lookup = it->second.stmtIndex.find(needle);
+    if (lookup == it->second.stmtIndex.end()) {
+        return std::nullopt;
+    }
+    return lookup->second;
+}
+
+inline std::optional<std::pair<const clang::CFGBlock *, size_t>>
+locateDecl(const clang::FunctionDecl *func, const clang::VarDecl *targetVar) {
+    if (func == nullptr || targetVar == nullptr) {
+        return std::nullopt;
+    }
+    const auto &cache = detail::threadLocalCfgCache();
+    auto it = cache.find(func);
+    if (it == cache.end()) {
+        return std::nullopt;
+    }
+    auto lookup = it->second.declIndex.find(targetVar);
+    if (lookup == it->second.declIndex.end()) {
+        return std::nullopt;
+    }
+    return lookup->second;
+}
+
+inline const clang::CFGBlock *
+locateTerminator(const clang::FunctionDecl *func, const clang::Stmt *terminator) {
+    if (func == nullptr || terminator == nullptr) {
+        return nullptr;
+    }
+    const auto &cache = detail::threadLocalCfgCache();
+    auto it = cache.find(func);
+    if (it == cache.end()) {
+        return nullptr;
+    }
+    auto lookup = it->second.terminatorIndex.find(terminator);
+    if (lookup == it->second.terminatorIndex.end()) {
+        return nullptr;
+    }
+    return lookup->second;
 }
 
 /// Return true if `func`'s body contains any `try` block. Result is

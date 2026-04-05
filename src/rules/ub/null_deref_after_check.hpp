@@ -68,7 +68,7 @@ class UbNullDerefAfterCheckRule : public Rule {
         if (cfg == nullptr) {
             return;
         }
-        const clang::CFGBlock *ifBlock = cfg::locateTerminator(*cfg, IfNode);
+        const clang::CFGBlock *ifBlock = cfg::locateTerminator(Func, IfNode);
         if (ifBlock == nullptr || ifBlock->succ_empty()) {
             return;
         }

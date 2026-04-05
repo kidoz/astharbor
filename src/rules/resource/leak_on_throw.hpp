@@ -71,7 +71,7 @@ class ResourceLeakOnThrowRule : public Rule {
             return;
         }
 
-        auto start = cfg::locateDecl(*cfg, OwningVar);
+        auto start = cfg::locateDecl(Func, OwningVar);
         if (!start) {
             return;
         }

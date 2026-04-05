@@ -58,7 +58,7 @@ class UbDoubleFreeLocalRule : public Rule {
             return;
         }
 
-        auto start = cfg::locateStmt(*cfg, FirstDelete);
+        auto start = cfg::locateStmt(Func, FirstDelete);
         if (!start) {
             return;
         }

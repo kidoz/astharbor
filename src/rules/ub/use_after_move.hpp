@@ -62,7 +62,7 @@ class UbUseAfterMoveRule : public Rule {
             return;
         }
 
-        auto start = cfg::locateStmt(*cfg, MoveCall);
+        auto start = cfg::locateStmt(Func, MoveCall);
         if (!start) {
             return;
         }
