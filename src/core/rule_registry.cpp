@@ -37,6 +37,10 @@
 #include "../rules/ub/implicit_widening_multiplication.hpp"
 #include "../rules/ub/noreturn_function_returns.hpp"
 #include "../rules/ub/reinterpret_cast_type_punning.hpp"
+#include "../rules/readability/use_using_alias.hpp"
+#include "../rules/portability/vla_in_cxx.hpp"
+#include "../rules/best_practice/no_raw_new_delete.hpp"
+#include "../rules/best_practice/explicit_single_arg_ctor.hpp"
 
 namespace astharbor {
 
@@ -79,6 +83,10 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbImplicitWideningMultiplicationRule>());
     registry.registerRule(std::make_unique<UbNoreturnFunctionReturnsRule>());
     registry.registerRule(std::make_unique<UbReinterpretCastTypePunningRule>());
+    registry.registerRule(std::make_unique<ReadabilityUseUsingAliasRule>());
+    registry.registerRule(std::make_unique<PortabilityVlaInCxxRule>());
+    registry.registerRule(std::make_unique<BestPracticeNoRawNewDeleteRule>());
+    registry.registerRule(std::make_unique<BestPracticeExplicitSingleArgCtorRule>());
 }
 
 } // namespace astharbor

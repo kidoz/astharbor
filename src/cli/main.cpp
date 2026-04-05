@@ -1,12 +1,15 @@
+#include <cstdio>
+#include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
 #include "astharbor/rule_registry.hpp"
 #include "astharbor/analyzer.hpp"
 #include "astharbor/fix_applicator.hpp"
+#include "astharbor/run_store.hpp"
 #include "../emitters/json_emitter.hpp"
 #include "../emitters/text_emitter.hpp"
 #include "../emitters/sarif_emitter.hpp"
@@ -35,6 +38,22 @@ static llvm::cl::opt<bool> Backup("backup",
                                    llvm::cl::desc("Create .bak backup before applying fixes"),
                                    llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<std::string>
+    SaveRun("save-run",
+            llvm::cl::desc("Persist the analysis result to disk for later "
+                           "`fix --run-id`. Optionally takes a path; defaults "
+                           "to ~/.astharbor/runs/<runId>.json"),
+            llvm::cl::init(""), llvm::cl::ValueOptional, llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<std::string>
+    RunId("run-id", llvm::cl::desc("Load a previously saved run by id"),
+          llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<std::string>
+    FindingId("finding-id",
+              llvm::cl::desc("Restrict fix to a single finding id from the loaded run"),
+              llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
 void print_help() {
     std::cout << "ASTHarbor CLI\n";
     std::cout << "Commands:\n";
@@ -42,10 +61,15 @@ void print_help() {
     std::cout << "  fix <files...>      Preview or apply fixes\n";
     std::cout << "  rules               List available rules\n";
     std::cout << "  doctor              Check toolchain health\n";
+    std::cout << "\nAnalyze options:\n";
+    std::cout << "  --save-run[=PATH]   Persist result to ~/.astharbor/runs/<runId>.json or\n";
+    std::cout << "                      to PATH for later `fix --run-id`\n";
     std::cout << "\nFix options:\n";
     std::cout << "  --apply             Apply safe fixes (default: preview only)\n";
     std::cout << "  --dry-run           Preview fixes without applying\n";
     std::cout << "  --rule=PATTERN      Only process fixes for matching rule IDs\n";
+    std::cout << "  --run-id=ID         Load a previously saved run instead of re-analyzing\n";
+    std::cout << "  --finding-id=ID     Apply fix only for a specific finding id\n";
     std::cout << "  --backup            Create .bak backup files before modifying\n";
     std::cout << "\nCommon options:\n";
     std::cout << "  --format=FORMAT     Output format: text, json, sarif\n";
@@ -102,6 +126,12 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         auto ruleFindings = rule->getFindings();
         result.findings.insert(result.findings.end(), ruleFindings.begin(), ruleFindings.end());
     }
+    // Assign stable sequential findingIds.
+    for (size_t index = 0; index < result.findings.size(); ++index) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "finding-%04zu", index);
+        result.findings[index].findingId = buffer;
+    }
 
     int exitCode = (toolExitCode != 0) ? 2 : (result.findings.empty() ? 0 : 1);
     return {std::move(result), exitCode};
@@ -143,6 +173,23 @@ int main(int argc, const char **argv) {
             // Tool failure, still emit what we have
         }
 
+        // Persist the run if --save-run was passed. An empty value means
+        // "use the default path"; a non-empty value is treated as an explicit
+        // target path.
+        bool savedRun = false;
+        std::filesystem::path savedPath;
+        if (SaveRun.getNumOccurrences() > 0) {
+            std::string savePathValue = SaveRun.getValue();
+            savedPath = savePathValue.empty() ? RunStore::defaultPathFor(result.runId)
+                                              : std::filesystem::path(savePathValue);
+            if (RunStore::save(result, savedPath)) {
+                savedRun = true;
+            } else {
+                llvm::errs() << "Warning: failed to persist run to " << savedPath.string()
+                             << "\n";
+            }
+        }
+
         std::unique_ptr<IEmitter> emitter;
         std::string formatValue = Format.getValue();
         if (formatValue == "json")
@@ -153,19 +200,44 @@ int main(int argc, const char **argv) {
             emitter = std::make_unique<TextEmitter>();
 
         emitter->emit(result, std::cout);
+        if (savedRun && formatValue == "text") {
+            std::cout << "Run saved to " << savedPath.string() << "\n";
+        }
         return exitCode;
 
     } else if (command == "fix") {
+        // Call setupParser first so that cl::opt values (including --run-id,
+        // --finding-id, --rule, --apply, etc.) are populated before we branch.
         auto parser = setupParser(argc, argv);
         if (!parser) {
             return 2;
         }
 
-        auto [result, exitCode] = runAnalysis(*parser, registry);
+        AnalysisResult result;
+        int exitCode = 0;
 
-        // Filter findings to only those with fixes
+        // Two modes: load a previously saved run via --run-id, or re-run the
+        // analysis on the given sources.
+        if (!RunId.getValue().empty()) {
+            auto runPath = RunStore::defaultPathFor(RunId.getValue());
+            auto loaded = RunStore::load(runPath);
+            if (!loaded) {
+                llvm::errs() << "Error: could not load run '" << RunId.getValue()
+                             << "' from " << runPath.string() << "\n";
+                return 2;
+            }
+            result = std::move(*loaded);
+        } else {
+            auto analysis = runAnalysis(*parser, registry);
+            result = std::move(analysis.first);
+            exitCode = analysis.second;
+        }
+
+        // Filter findings to only those with fixes (and optional rule /
+        // finding-id filters).
         std::vector<Finding> fixableFindings;
         std::string rulePattern = RuleFilter.getValue();
+        std::string findingIdFilter = FindingId.getValue();
         for (const auto &finding : result.findings) {
             if (finding.fixes.empty()) {
                 continue;
@@ -173,8 +245,12 @@ int main(int argc, const char **argv) {
             if (!rulePattern.empty() && finding.ruleId.find(rulePattern) == std::string::npos) {
                 continue;
             }
+            if (!findingIdFilter.empty() && finding.findingId != findingIdFilter) {
+                continue;
+            }
             fixableFindings.push_back(finding);
         }
+        (void)exitCode;
 
         if (fixableFindings.empty()) {
             std::cout << "No fixes available.\n";
