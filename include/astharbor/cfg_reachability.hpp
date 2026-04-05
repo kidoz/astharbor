@@ -155,9 +155,9 @@ locateDecl(const clang::CFG &cfg, const clang::VarDecl *targetVar) {
 /// BFS driver for "is there a reachable statement matching some predicate
 /// before a reassignment/write happens?" dataflow.
 ///
-/// Starting from `(startBlock, startIndex + 1)` — i.e. the element right
-/// after the triggering statement — visit reachable CFG elements in BFS
-/// order. For each `clang::Stmt` in a reached element, in order:
+/// Starting from `(startBlock, scanFromIndex)` — the first element to
+/// scan, inclusive — visit reachable CFG elements in BFS order. For each
+/// `clang::Stmt` in a reached element, in order:
 ///   * if `stopsPath(stmt)` returns true, this path is considered "fresh"
 ///     from here; stop scanning and do not enqueue successors via the
 ///     scanning loop (visited bookkeeping still prevents revisits),
@@ -172,14 +172,14 @@ locateDecl(const clang::CFG &cfg, const clang::VarDecl *targetVar) {
 /// elements when that distinction matters.
 template <typename StopsPath, typename FindsReport>
 std::optional<clang::SourceLocation>
-forwardReachable(const clang::CFGBlock *startBlock, size_t startIndex,
+forwardReachable(const clang::CFGBlock *startBlock, size_t scanFromIndex,
                  StopsPath stopsPath, FindsReport findsReport) {
     if (startBlock == nullptr) {
         return std::nullopt;
     }
     std::unordered_set<const clang::CFGBlock *> visited;
     std::deque<std::pair<const clang::CFGBlock *, size_t>> work;
-    work.emplace_back(startBlock, startIndex + 1);
+    work.emplace_back(startBlock, scanFromIndex);
     visited.insert(startBlock);
 
     while (!work.empty()) {

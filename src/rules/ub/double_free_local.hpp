@@ -64,7 +64,7 @@ class UbDoubleFreeLocalRule : public Rule {
         }
 
         auto reportLoc = cfg::forwardReachable(
-            start->first, start->second,
+            start->first, start->second + 1,
             [&](const clang::Stmt *stmt) {
                 return cfg::isAssignmentTo(stmt, DeletedVar);
             },

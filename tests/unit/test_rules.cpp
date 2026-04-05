@@ -16,6 +16,7 @@
 #include "../../src/rules/ub/use_after_move.hpp"
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
+#include "../../src/rules/ub/null_deref_after_check.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -1240,6 +1241,115 @@ TEST(UbUninitializedLocalRuleTest, IgnoresWriteInAllBranches) {
                     x = 2;
                 }
                 return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── null-deref-after-check (Tier 2) ───────────────────────────────────
+
+TEST(UbNullDerefAfterCheckRuleTest, DetectsArrowDerefInNullBranch) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            struct S { int field; };
+            int test(S *p) {
+                if (p == nullptr) {
+                    return p->field;
+                }
+                return 0;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/null-deref-after-check");
+}
+
+TEST(UbNullDerefAfterCheckRuleTest, DetectsStarDerefInNotCheck) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            int test(int *p) {
+                if (!p) {
+                    return *p;
+                }
+                return 0;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbNullDerefAfterCheckRuleTest, DetectsSubscriptInNullBranch) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            int test(int *p) {
+                if (p == 0) {
+                    return p[5];
+                }
+                return 0;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbNullDerefAfterCheckRuleTest, IgnoresEarlyReturnGuard) {
+    // The canonical GOOD pattern: early-return on null. The then-block
+    // has no dereferences, so BFS finds nothing and the rule stays
+    // silent.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            int test(int *p) {
+                if (p == nullptr) {
+                    return -1;
+                }
+                return *p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbNullDerefAfterCheckRuleTest, IgnoresReassignmentBeforeDeref) {
+    // `p = &fallback;` restores a non-null value on this path, so the
+    // subsequent dereference is safe and should not be reported.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            int test(int *p) {
+                int fallback = 42;
+                if (p == nullptr) {
+                    p = &fallback;
+                    return *p;
+                }
+                return 0;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbNullDerefAfterCheckRuleTest, IgnoresDerefOutsideThenBranch) {
+    // The dereference lives after the `if`, not inside its then-branch,
+    // so the check-then-use pattern is fine.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+        R"cpp(
+            int test(int *p) {
+                if (p == nullptr) {
+                    return -1;
+                }
+                return *p;
             }
         )cpp");
 
