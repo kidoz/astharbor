@@ -91,10 +91,15 @@ class RunStore {
                 {"fixes", std::move(fixesArray)},
             });
         }
+        llvm::json::Object hashes;
+        for (const auto &[path, hash] : result.fileHashes) {
+            hashes[path] = hash;
+        }
         llvm::json::Object root{
             {"runId", result.runId},
             {"success", result.success},
             {"findings", std::move(findingsArray)},
+            {"fileHashes", std::move(hashes)},
         };
         std::string output;
         llvm::raw_string_ostream stream(output);
@@ -171,6 +176,13 @@ class RunStore {
                     }
                 }
                 result.findings.push_back(std::move(finding));
+            }
+        }
+        if (const auto *hashObj = object.getObject("fileHashes")) {
+            for (const auto &entry : *hashObj) {
+                if (auto value = entry.getSecond().getAsString()) {
+                    result.fileHashes[entry.getFirst().str()] = value->str();
+                }
             }
         }
         return result;

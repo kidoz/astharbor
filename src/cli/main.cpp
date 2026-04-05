@@ -17,6 +17,8 @@
 #include <clang/Tooling/ArgumentsAdjusters.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
+#include <cstdint>
+#include <llvm/Support/xxhash.h>
 #include "astharbor/rule_registry.hpp"
 #include "astharbor/analyzer.hpp"
 #include "astharbor/config.hpp"
@@ -118,6 +120,13 @@ static llvm::cl::opt<std::string>
                                     "compare`. Defaults to 'clang++,g++'. Each compiler is "
                                     "invoked with -fsyntax-only -Wall -Wextra via popen."),
                      llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<bool>
+    Incremental("incremental",
+                llvm::cl::desc("Skip files whose content hash matches the most recent "
+                               "saved run for this source set. Requires a prior run with "
+                               "--save-run."),
+                llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 // Project config discovered from .astharbor.yml. CLI option values are
 // merged from this struct after setupParser() has populated the cl::opts,
@@ -235,6 +244,23 @@ static bool ruleIsEnabled(const std::string &ruleId,
         return false;
     }
     return true;
+}
+
+/// Compute a stable 64-bit content hash of a file as a lowercase hex
+/// string. Uses LLVM's xxh3 (non-cryptographic but fast and stable across
+/// runs on the same architecture). Returns empty string on IO failure.
+static std::string hashFileContent(const std::string &path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    uint64_t hash = llvm::xxh3_64bits(content);
+    char buffer[17];
+    std::snprintf(buffer, sizeof(buffer), "%016llx",
+                  static_cast<unsigned long long>(hash));
+    return std::string(buffer);
 }
 
 /// Read a file's entire contents into a string. Returns nullopt on IO
@@ -419,6 +445,90 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
     }
 
+    // Incremental mode: hash each source file and compare against the
+    // most recent saved run. Files whose hash matches are skipped and
+    // their findings carried forward from the prior run.
+    std::vector<Finding> carriedFindings;
+    std::map<std::string, std::string> currentHashes;
+    const bool incrementalMode = Incremental.getValue();
+    if (incrementalMode) {
+        for (const auto &path : sourcePaths) {
+            currentHashes[path] = hashFileContent(path);
+        }
+        // Find the newest run file in the default directory.
+        auto runsDir = RunStore::defaultDirectory();
+        std::error_code ec;
+        std::optional<std::filesystem::path> newestPath;
+        std::filesystem::file_time_type newestTime{};
+        if (std::filesystem::exists(runsDir, ec) && !ec) {
+            for (auto &entry : std::filesystem::directory_iterator(runsDir, ec)) {
+                if (ec) {
+                    break;
+                }
+                if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+                    continue;
+                }
+                auto mtime = entry.last_write_time(ec);
+                if (ec) {
+                    continue;
+                }
+                if (!newestPath || mtime > newestTime) {
+                    newestPath = entry.path();
+                    newestTime = mtime;
+                }
+            }
+        }
+        if (newestPath) {
+            if (auto priorRun = RunStore::load(*newestPath)) {
+                std::set<std::string> unchangedFiles;
+                for (const auto &[path, currentHash] : currentHashes) {
+                    if (currentHash.empty()) {
+                        continue; // IO failure — re-analyze to be safe
+                    }
+                    auto it = priorRun->fileHashes.find(path);
+                    if (it != priorRun->fileHashes.end() && it->second == currentHash) {
+                        unchangedFiles.insert(path);
+                    }
+                }
+                // Carry forward findings for unchanged files.
+                for (const auto &finding : priorRun->findings) {
+                    if (unchangedFiles.count(finding.file) > 0) {
+                        carriedFindings.push_back(finding);
+                    }
+                }
+                // Drop unchanged files from the source list.
+                std::vector<std::string> remaining;
+                remaining.reserve(sourcePaths.size());
+                for (const auto &path : sourcePaths) {
+                    if (unchangedFiles.count(path) == 0) {
+                        remaining.push_back(path);
+                    }
+                }
+                if (verbose) {
+                    llvm::errs() << "[verbose] --incremental: " << unchangedFiles.size()
+                                 << " of " << sourcePaths.size()
+                                 << " file(s) unchanged; carrying "
+                                 << carriedFindings.size() << " finding(s) forward\n";
+                }
+                sourcePaths = std::move(remaining);
+            }
+        }
+        if (sourcePaths.empty()) {
+            // Everything was unchanged — emit a synthetic result with just
+            // the carried findings and the current hashes.
+            AnalysisResult result;
+            result.runId = generateRunId();
+            result.success = true;
+            result.findings = std::move(carriedFindings);
+            result.fileHashes = std::move(currentHashes);
+            assignFindingIds(result);
+            if (verbose) {
+                llvm::errs() << "[verbose] --incremental: nothing to re-analyze\n";
+            }
+            return {std::move(result), result.findings.empty() ? 0 : 1};
+        }
+    }
+
     if (ChangedOnly.getValue()) {
         auto changed = gitChangedFiles();
         if (!changed) {
@@ -569,10 +679,35 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         }
     }
 
+    // Merge any incremental-carryover findings before assigning ids so
+    // carried findings get stable ids within the new run.
+    if (!carriedFindings.empty()) {
+        allFindings.insert(allFindings.end(),
+                           std::make_move_iterator(carriedFindings.begin()),
+                           std::make_move_iterator(carriedFindings.end()));
+        std::sort(allFindings.begin(), allFindings.end(),
+                  [](const Finding &lhs, const Finding &rhs) {
+                      return std::tie(lhs.file, lhs.line, lhs.column, lhs.ruleId) <
+                             std::tie(rhs.file, rhs.line, rhs.column, rhs.ruleId);
+                  });
+    }
+
     AnalysisResult result;
     result.runId = generateRunId();
     result.success = (worstExitCode == 0);
     result.findings = std::move(allFindings);
+    // Record the hashes of everything we just analyzed (or carried over)
+    // so the next --incremental run can skip them.
+    if (incrementalMode) {
+        result.fileHashes = std::move(currentHashes);
+    } else {
+        for (const auto &path : sourcePaths) {
+            auto hash = hashFileContent(path);
+            if (!hash.empty()) {
+                result.fileHashes[path] = std::move(hash);
+            }
+        }
+    }
     assignFindingIds(result);
 
     if (verbose) {
