@@ -112,6 +112,13 @@ static llvm::cl::opt<bool>
                 llvm::cl::desc("Only analyze files reported as modified by `git diff`."),
                 llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<std::string>
+    CompareCompilers("compare-compilers",
+                     llvm::cl::desc("Comma-separated list of compilers for `astharbor "
+                                    "compare`. Defaults to 'clang++,g++'. Each compiler is "
+                                    "invoked with -fsyntax-only -Wall -Wextra via popen."),
+                     llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
 // Project config discovered from .astharbor.yml. CLI option values are
 // merged from this struct after setupParser() has populated the cl::opts,
 // so explicit CLI flags always win and config-provided values fill in
@@ -968,27 +975,80 @@ int main(int argc, const char **argv) {
             return report;
         };
 
-        CompilerReport clangReport = runCompiler("clang++");
-        CompilerReport gccReport = runCompiler("g++");
+        // Collect the compiler list from --compare-compilers if set, else
+        // default to "clang++,g++" so existing invocations work unchanged.
+        // compare doesn't use CommonOptionsParser, so we parse the flag
+        // manually from argv (like extractFormat does for --format).
+        std::vector<std::string> compilerList;
+        {
+            std::string value;
+            for (int index = 2; index < argc; ++index) {
+                std::string arg = argv[index];
+                if (arg.starts_with("--compare-compilers=")) {
+                    value = arg.substr(20);
+                    break;
+                }
+                if (arg == "--compare-compilers" && index + 1 < argc) {
+                    value = argv[index + 1];
+                    break;
+                }
+            }
+            if (value.empty()) {
+                compilerList = {"clang++", "g++"};
+            } else {
+                size_t start = 0;
+                while (start < value.size()) {
+                    size_t comma = value.find(',', start);
+                    std::string token =
+                        value.substr(start, comma == std::string::npos ? std::string::npos
+                                                                        : comma - start);
+                    // Trim whitespace.
+                    while (!token.empty() && std::isspace(static_cast<unsigned char>(token.front()))) {
+                        token.erase(token.begin());
+                    }
+                    while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back()))) {
+                        token.pop_back();
+                    }
+                    if (!token.empty()) {
+                        compilerList.push_back(std::move(token));
+                    }
+                    if (comma == std::string::npos) {
+                        break;
+                    }
+                    start = comma + 1;
+                }
+            }
+        }
 
-        // Diff the diagnostic-code sets so users see what each compiler
-        // noticed that the other didn't.
-        std::vector<std::string> clangOnly;
-        std::vector<std::string> gccOnly;
-        std::vector<std::string> both;
-        std::set_difference(clangReport.codes.begin(), clangReport.codes.end(),
-                            gccReport.codes.begin(), gccReport.codes.end(),
-                            std::back_inserter(clangOnly));
-        std::set_difference(gccReport.codes.begin(), gccReport.codes.end(),
-                            clangReport.codes.begin(), clangReport.codes.end(),
-                            std::back_inserter(gccOnly));
-        std::set_intersection(clangReport.codes.begin(), clangReport.codes.end(),
-                              gccReport.codes.begin(), gccReport.codes.end(),
-                              std::back_inserter(both));
+        std::vector<std::pair<std::string, CompilerReport>> reports;
+        reports.reserve(compilerList.size());
+        for (const auto &compiler : compilerList) {
+            reports.emplace_back(compiler, runCompiler(compiler));
+        }
 
-        const bool agree = clangReport.exitCode == gccReport.exitCode &&
-                           clangOnly.empty() && gccOnly.empty() &&
-                           clangReport.errorCount == gccReport.errorCount;
+        // Compute pairwise code diffs against the first available compiler
+        // so the text output can still highlight "compiler X has a finding
+        // Y that others don't".
+        std::set<std::string> unionCodes;
+        for (const auto &[_, report] : reports) {
+            unionCodes.insert(report.codes.begin(), report.codes.end());
+        }
+
+        bool agree = true;
+        int baselineExit = -999;
+        for (const auto &[name, report] : reports) {
+            if (report.exitCode < 0) {
+                continue; // treat unavailable compilers as neutral
+            }
+            if (baselineExit == -999) {
+                baselineExit = report.exitCode;
+            } else if (report.exitCode != baselineExit) {
+                agree = false;
+            }
+            if (report.codes != reports.front().second.codes) {
+                agree = false;
+            }
+        }
 
         auto joinCodes = [](const std::vector<std::string> &codes) {
             std::string result;
@@ -1003,7 +1063,7 @@ int main(int argc, const char **argv) {
 
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
-            auto emitReport = [](const char *name, const CompilerReport &report) {
+            auto emitReport = [](const std::string &name, const CompilerReport &report) {
                 std::cout << R"(  ")" << name << R"(": {)"
                           << R"("available": )" << (report.exitCode >= 0 ? "true" : "false")
                           << R"(, "exit": )" << report.exitCode
@@ -1019,29 +1079,43 @@ int main(int argc, const char **argv) {
             };
             std::cout << "{\n";
             std::cout << R"(  "file": ")" << sourceFile << "\",\n";
-            emitReport("clang", clangReport);
-            std::cout << ",\n";
-            emitReport("gcc", gccReport);
-            std::cout << ",\n";
-            std::cout << R"(  "clangOnly": [)";
-            if (!clangOnly.empty()) {
-                std::cout << "\"" << joinCodes(clangOnly) << "\"";
+            std::cout << R"(  "compilers": {)" << "\n";
+            for (size_t i = 0; i < reports.size(); ++i) {
+                emitReport(reports[i].first, reports[i].second);
+                std::cout << (i + 1 < reports.size() ? ",\n" : "\n");
             }
-            std::cout << "],\n";
-            std::cout << R"(  "gccOnly": [)";
-            if (!gccOnly.empty()) {
-                std::cout << "\"" << joinCodes(gccOnly) << "\"";
+            std::cout << "  },\n";
+            // Per-compiler unique-code sets.
+            std::cout << R"(  "uniqueCodes": {)" << "\n";
+            for (size_t i = 0; i < reports.size(); ++i) {
+                const auto &[name, report] = reports[i];
+                std::vector<std::string> unique;
+                for (const auto &code : report.codes) {
+                    bool seenElsewhere = false;
+                    for (const auto &[otherName, otherReport] : reports) {
+                        if (&otherReport == &report) {
+                            continue;
+                        }
+                        if (otherReport.codes.count(code) > 0) {
+                            seenElsewhere = true;
+                            break;
+                        }
+                    }
+                    if (!seenElsewhere) {
+                        unique.push_back(code);
+                    }
+                }
+                std::cout << R"(    ")" << name << R"(": [)";
+                if (!unique.empty()) {
+                    std::cout << "\"" << joinCodes(unique) << "\"";
+                }
+                std::cout << "]" << (i + 1 < reports.size() ? ",\n" : "\n");
             }
-            std::cout << "],\n";
-            std::cout << R"(  "shared": [)";
-            if (!both.empty()) {
-                std::cout << "\"" << joinCodes(both) << "\"";
-            }
-            std::cout << "],\n";
+            std::cout << "  },\n";
             std::cout << R"(  "agreement": )" << (agree ? "true" : "false") << "\n";
             std::cout << "}\n";
         } else {
-            auto printReport = [](const char *label, const CompilerReport &report) {
+            auto printReport = [](const std::string &label, const CompilerReport &report) {
                 std::cout << "  " << label;
                 if (report.exitCode < 0) {
                     std::cout << " not available\n";
@@ -1062,22 +1136,44 @@ int main(int argc, const char **argv) {
                 std::cout << "\n";
             };
             std::cout << "ASTHarbor Compare: " << sourceFile << "\n";
-            printReport("clang++:", clangReport);
-            printReport("g++:    ", gccReport);
-            if (clangReport.exitCode >= 0 && gccReport.exitCode >= 0) {
-                if (!clangOnly.empty()) {
-                    std::cout << "  Clang-only codes: ";
-                    for (const auto &code : clangOnly) {
-                        std::cout << "-W" << code << " ";
-                    }
-                    std::cout << "\n";
+            for (const auto &[name, report] : reports) {
+                printReport(name + ":", report);
+            }
+            // Per-compiler uniques (only when at least two compilers available).
+            size_t available = 0;
+            for (const auto &[_, report] : reports) {
+                if (report.exitCode >= 0) {
+                    ++available;
                 }
-                if (!gccOnly.empty()) {
-                    std::cout << "  GCC-only codes:   ";
-                    for (const auto &code : gccOnly) {
-                        std::cout << "-W" << code << " ";
+            }
+            if (available >= 2) {
+                for (const auto &[name, report] : reports) {
+                    if (report.exitCode < 0) {
+                        continue;
                     }
-                    std::cout << "\n";
+                    std::vector<std::string> unique;
+                    for (const auto &code : report.codes) {
+                        bool seenElsewhere = false;
+                        for (const auto &[otherName, otherReport] : reports) {
+                            if (&otherReport == &report) {
+                                continue;
+                            }
+                            if (otherReport.codes.count(code) > 0) {
+                                seenElsewhere = true;
+                                break;
+                            }
+                        }
+                        if (!seenElsewhere) {
+                            unique.push_back(code);
+                        }
+                    }
+                    if (!unique.empty()) {
+                        std::cout << "  " << name << "-only codes: ";
+                        for (const auto &code : unique) {
+                            std::cout << "-W" << code << " ";
+                        }
+                        std::cout << "\n";
+                    }
                 }
                 std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ")
                           << "\n";
