@@ -2,96 +2,97 @@
 
 ## High-Level Overview
 
-ASTHarbor is a C/C++ static analysis tool built on Clang LibTooling. It has two
-frontends (a native CLI and a Python MCP server) that share a single core
-analysis library.
+ASTHarbor is a C/C++ static analyzer built on Clang LibTooling. It has two
+frontends — a native CLI and a Python MCP server — layered on top of a
+single core analysis library.
 
 ```
-                          +---------------------+
-                          |    User / IDE / AI   |
-                          +----------+----------+
+                          +----------------------+
+                          |   User / IDE / AI    |
+                          +----------+-----------+
                                      |
                   +------------------+------------------+
                   |                                     |
          +--------v--------+                  +---------v--------+
-         |   CLI Frontend  |                  |  MCP Frontend    |
-         |   (C++ binary)  |                  |  (Python/FastMCP)|
+         |   CLI Frontend  |                  |   MCP Frontend   |
+         |   (C++ binary)  |                  | (Python/FastMCP) |
          +--------+--------+                  +---------+--------+
                   |                                     |
                   |                           subprocess invocation
                   |                                     |
                   +------------------+------------------+
                                      |
-                          +----------v----------+
-                          | Core Analyzer Library|
-                          |   (libastharbor.a)  |
-                          +----------+----------+
+                          +----------v-----------+
+                          | Core Analyzer Library |
+                          |    (libastharbor)    |
+                          +----------+-----------+
                                      |
-              +----------------------+----------------------+
-              |              |               |              |
-     +--------v---+  +------v------+  +-----v-----+  +----v------+
-     | Rule       |  | Compilation |  | Emitters   |  | Fix       |
-     | Registry   |  | Database    |  | (text/json |  | Applicator|
-     |            |  | Handling    |  |  /sarif)   |  |           |
-     +------------+  +-------------+  +-----------+  +-----------+
-              |
-     +--------v--------+
-     | AST Matcher Rules|
-     | (27 built-in)   |
-     +-----------------+
+       +-----------+-----------+-----+-----+-----------+-----------+
+       |           |           |           |           |           |
+  +----v----+ +----v----+ +----v----+ +----v----+ +----v----+ +----v----+
+  |  Rule   | | Analyzer| | Compile |  Emitters | |   Fix   | |  Run    |
+  | Registry| | driver  | | Database| |text/json | |Applicator| |  Store  |
+  |         | |         | | handling| |  /sarif  | |          | |         |
+  +---------+ +---------+ +---------+ +----------+ +----------+ +---------+
+       |
+  +----v-------------+
+  | AST Matcher Rules |
+  |  (~46 built-in,   |
+  |   8 categories)   |
+  +-------------------+
 ```
 
 ## Core Analyzer Library (C++23)
 
-The core is compiled as a static library (`libastharbor.a`) using Meson and
-linked against `libclang-cpp`. It requires LLVM >= 14.0 and uses the C++23
-standard.
+The core compiles into a static library (`libastharbor`) using Meson and
+links against `libclang-cpp`. It requires LLVM >= 14 and the C++23 standard.
 
-### Compilation Database Handling
+### Rule registry and rule base class
 
-The `CompilationDB` class (`include/astharbor/compilation_db.hpp`) wraps Clang's
-`CompilationDatabase`. When analyzing files, the CLI uses Clang's
-`CommonOptionsParser` to automatically locate a `compile_commands.json` file
-in the current or parent directories. If no source files are explicitly listed,
-the tool auto-discovers all files from the compilation database.
+- `RuleRegistry` (`include/astharbor/rule_registry.hpp`) owns a vector of
+  `std::unique_ptr<Rule>`. The free function `registerBuiltinRules()` in
+  `src/core/rule_registry.cpp` populates it with every shipped rule.
+- Every rule inherits from `Rule` (`include/astharbor/rule.hpp`), which
+  itself extends `clang::ast_matchers::MatchFinder::MatchCallback`. Rules
+  implement `id()`, `title()`, `category()`, `summary()`,
+  `defaultSeverity()`, `registerMatchers()`, and `run()`.
+- The base class provides helpers that remove boilerplate from the ~46
+  concrete rules:
+  - `isInSystemHeader()` filters out noise from system headers.
+  - `makeFinding()` builds a `Finding` pre-populated with rule metadata and
+    a decomposed source location, returning `std::nullopt` when the match
+    should be suppressed.
+  - `emitFinding()` is a convenience wrapper that pushes the result onto
+    the rule's internal `findings` vector.
+  - `nextFixId()` generates a monotonic per-rule fix id.
 
-### Rule Registry
+### Shipped rules
 
-The `RuleRegistry` (`include/astharbor/rule_registry.hpp`) holds a vector of
-`std::unique_ptr<Rule>` instances. The free function `registerBuiltinRules()`
-(`src/core/rule_registry.cpp`) populates the registry with all 27 built-in
-rules, organized into five categories:
+~46 rules across eight categories:
 
-| Category      | Example Rules                                              |
-|---------------|------------------------------------------------------------|
-| `bugprone`    | assignment-in-condition, identical-expressions, suspicious-memset, suspicious-semicolon, unsafe-memory-operation |
-| `modernize`   | use-nullptr, use-override                                 |
-| `performance` | for-loop-copy                                              |
-| `readability` | const-return-type, container-size-empty                    |
-| `security`    | no-gets, no-sprintf, no-strcpy-strcat, unsafe-printf-format, unsafe-temp-file, unchecked-realloc, no-system-call, no-atoi, deprecated-crypto-call, no-alloca, no-signal, no-rand, missing-return-value-check, no-scanf-without-width, signed-arith-in-alloc, large-stack-array, integer-signedness-mismatch |
+| Category       | Examples                                                                                                                                          |
+|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `bugprone`     | assignment-in-condition, identical-expressions, suspicious-memset, suspicious-semicolon, unsafe-memory-operation                                  |
+| `modernize`    | use-nullptr, use-override                                                                                                                          |
+| `performance`  | for-loop-copy                                                                                                                                      |
+| `readability`  | const-return-type, container-size-empty, use-using-alias                                                                                           |
+| `security`     | no-gets, no-sprintf, no-strcpy-strcat, unsafe-printf-format, unsafe-temp-file, unchecked-realloc, no-system-call, no-atoi, deprecated-crypto-call, no-alloca, no-signal, no-rand, missing-return-value-check, no-scanf-without-width, signed-arith-in-alloc, large-stack-array, integer-signedness-mismatch |
+| `ub`           | missing-return-in-non-void, division-by-zero-literal, shift-by-negative, shift-past-bitwidth, static-array-oob-constant, delete-non-virtual-dtor, new-delete-array-mismatch, pointer-arithmetic-on-polymorphic, implicit-widening-multiplication, noreturn-function-returns, reinterpret-cast-type-punning, c-style-cast-pointer-punning, casting-through-void, move-of-const, sizeof-array-parameter |
+| `portability`  | vla-in-cxx                                                                                                                                         |
+| `best-practice`| no-raw-new-delete, explicit-single-arg-ctor                                                                                                        |
 
-### Rule Base Class
-
-Every rule inherits from `Rule` (`include/astharbor/rule.hpp`), which itself
-extends `clang::ast_matchers::MatchFinder::MatchCallback`. A rule must
-implement:
-
-- `id()` -- unique identifier, e.g., `"modernize/use-nullptr"`
-- `title()` -- human-readable short name
-- `category()` -- grouping category
-- `summary()` -- one-line description
-- `defaultSeverity()` -- `"warning"`, `"error"`, etc.
-- `registerMatchers(MatchFinder &)` -- bind AST matchers
-- `run(MatchResult &)` -- handle each match, push to `findings` vector
-
-The base class also provides `isInSystemHeader()` so rules can skip findings
-inside system headers.
-
-### Finding and Fix Models
-
-A `Finding` (`include/astharbor/finding.hpp`) captures one diagnostic:
+### Finding, Fix, and AnalysisResult
 
 ```cpp
+struct Fix {
+    std::string fixId;
+    std::string description;
+    std::string safety;           // "safe" | "review" | "manual"
+    std::string replacementText;
+    int offset = 0;
+    int length = 0;
+};
+
 struct Finding {
     std::string findingId;
     std::string ruleId;
@@ -103,109 +104,124 @@ struct Finding {
     int column = 0;
     std::vector<Fix> fixes;
 };
-```
 
-A `Fix` (`include/astharbor/fix.hpp`) describes a concrete source edit:
-
-```cpp
-struct Fix {
-    std::string fixId;
-    std::string description;
-    std::string safety;         // "safe", "review", or "manual"
-    std::string replacementText;
-    int offset = 0;
-    int length = 0;
+struct AnalysisResult {
+    std::string runId;
+    bool success = true;
+    std::vector<Finding> findings;
 };
 ```
 
-An `AnalysisResult` (`include/astharbor/result.hpp`) bundles a run ID, success
-flag, and the collected findings.
+`generateRunId()` (in `include/astharbor/analyzer.hpp`) stamps a run id of
+the form `run-<hex-millis>`. `assignFindingIds()` walks the final findings
+vector and assigns sequential ids (`finding-0000`, `finding-0001`, …) so the
+same finding stays addressable across runs that start from an identical
+source base.
+
+### Compilation database handling
+
+`CompilationDB` (`include/astharbor/compilation_db.hpp`) wraps Clang's
+`CompilationDatabase`. When analyzing files, the CLI delegates to
+`CommonOptionsParser`, which walks upward from the current directory looking
+for `compile_commands.json`. If no sources are specified explicitly, the
+tool falls back to the compilation database's `getAllFiles()`.
 
 ### Emitters
 
-Emitters implement the `IEmitter` interface (`include/astharbor/emitter.hpp`):
+Emitters implement `IEmitter` (`include/astharbor/emitter.hpp`), which has a
+single `emit(const AnalysisResult &, std::ostream &)` method. Three shipped
+implementations:
 
-```cpp
-class IEmitter {
-  public:
-    virtual void emit(const AnalysisResult &result, std::ostream &out) = 0;
-};
-```
+- `TextEmitter` (`src/emitters/text_emitter.cpp`) — Clang-style
+  `file:line:col: <severity>: message [rule-id]` output.
+- `JsonEmitter` (`src/emitters/json_emitter.cpp`) — Structured JSON
+  containing `runId`, `success`, and a `findings` array with fixes.
+- `SarifEmitter` (`src/emitters/sarif_emitter.cpp`) — SARIF 2.1.0. The
+  emitter takes a `RuleRegistry*` so it can populate `tool.driver.rules`
+  with full rule metadata, map severity strings to SARIF levels, index each
+  result back to its rule via `ruleIndex`, and encode fixes into the SARIF
+  `fixes[]`/`artifactChanges[]`/`replacements[]` structure.
 
-Three emitters are provided:
+### Fix applicator
 
-- **TextEmitter** (`src/emitters/text_emitter.cpp`) -- Clang-style
-  `file:line:col: warning: message [rule-id]` output.
-- **JsonEmitter** (`src/emitters/json_emitter.cpp`) -- Structured JSON with
-  runId, success flag, and findings array (including fixes).
-- **SarifEmitter** (`src/emitters/sarif_emitter.cpp`) -- SARIF v2.1.0 format
-  for integration with GitHub Code Scanning and other SARIF consumers.
+`FixApplicator` (`include/astharbor/fix_applicator.hpp`) is a static helper
+with two entry points:
 
-### Fix Applicator
+- `preview(findings, ostream)` — prints a per-file human-readable summary.
+- `apply(findings, backup)` — reads each affected file, optionally writes a
+  `.bak`, sorts fixes by offset descending, applies replacements end-to-
+  beginning (to keep offsets stable), writes the result, and returns an
+  `ApplyResult{ filesModified, fixesApplied, fixesSkipped, errors }`. Only
+  fixes labeled `"safe"` are written; `"review"` and `"manual"` fixes are
+  skipped and counted.
 
-The `FixApplicator` (`include/astharbor/fix_applicator.hpp`) is a static
-utility class with two modes:
+### Run store
 
-- `preview()` -- prints a human-readable summary of available fixes grouped
-  by file, without modifying anything.
-- `apply()` -- reads each file, optionally creates a `.bak` backup, applies
-  fixes from end-of-file to beginning (to preserve offsets), and writes the
-  result. Only `"safe"` fixes are applied by default.
+`RunStore` (`include/astharbor/run_store.hpp`) persists an `AnalysisResult`
+as `llvm::json` under `~/.astharbor/runs/<runId>.json` (or an explicit path
+supplied via `--save-run=PATH`). `RunStore::load()` reads a saved run back
+into an `AnalysisResult` so `astharbor fix --run-id` can operate on it
+without re-running Clang.
 
 ## CLI Frontend
 
-The CLI (`src/cli/main.cpp`) is a standalone executable that links against
+`src/cli/main.cpp` is a standalone executable linked against
 `libastharbor`. It uses LLVM's `cl::opt` CommandLine library for option
-parsing and Clang's `CommonOptionsParser` for source file and compilation
+parsing and Clang's `CommonOptionsParser` for source-file and compilation-
 database resolution.
 
-Subcommands:
+Subcommands and their responsibilities:
 
-| Command   | Description                          |
-|-----------|--------------------------------------|
-| `analyze` | Run analysis, emit findings          |
-| `fix`     | Preview or apply automatic fixes     |
-| `rules`   | List all registered rules            |
-| `doctor`  | Check toolchain and environment      |
-| `compare` | Reserved, not yet implemented        |
+| Command   | Purpose                                                         |
+|-----------|-----------------------------------------------------------------|
+| `analyze` | Resolve sources → run analysis (optionally parallel) → emit     |
+| `fix`     | Produce or load an `AnalysisResult` → preview or apply fixes    |
+| `rules`   | Dump the contents of `RuleRegistry` (text or JSON)             |
+| `doctor`  | Print rule count and compilation-database availability         |
+| `compare` | Call `clang++`/`g++` `-fsyntax-only` on a single file and diff diagnostics counts |
+
+Option wiring lives at module scope in `main.cpp`:
+
+- `Format`, `Apply`, `DryRun`, `RuleFilter`, `Backup`
+- `SaveRun`, `RunId`, `FindingId`
+- `Checks`, `Verbose`, `Std`, `CompilerProfile`, `Jobs`, `ChangedOnly`
+
+The `runAnalysis()` helper is shared between `analyze` and `fix`: it honors
+`--changed-only` (intersecting sources with `git diff`), `--checks`
+(per-rule include/exclude substring patterns), `--std` and
+`--compiler-profile` (via `ArgumentsAdjuster`), `--verbose` (progress +
+timing on stderr), and `--jobs` (round-robin partitioning of sources into
+N worker threads, each with a fresh `RuleRegistry` and `ClangTool`,
+with findings merged and sorted deterministically by
+`(file, line, column, ruleId)` after all workers finish).
 
 See [cli.md](cli.md) for the full command reference.
 
 ## MCP Frontend (Python)
 
-The MCP frontend (`python/astharbor_mcp/`) is a Python package that exposes
-the ASTHarbor CLI as a set of MCP (Model Context Protocol) tools using the
-FastMCP framework.
+`python/astharbor_mcp/` is a FastMCP server. It never links Clang; every
+tool invocation spawns the `astharbor` binary via `subprocess.run()` and
+parses the resulting stdout.
 
-### CLI Bridge Subprocess Model
+Modules:
 
-The MCP server does not link against `libastharbor` or use Clang bindings
-directly. Instead, each tool invocation spawns the `astharbor` CLI binary as
-a subprocess via `subprocess.run()`. The bridge function
-(`python/astharbor_mcp/server.py::_run_astharbor`) handles:
+- `server.py` — declares the FastMCP instance and all tools/resources.
+- `cli_bridge.py` — locates the native binary (PATH + build-directory
+  fallback) and wraps every CLI subcommand with a Python function.
+- `models.py` — Pydantic v2 models (`Fix`, `Finding`, `AnalysisResult`,
+  `ApplyResult`) with camelCase aliases so both `result["runId"]` and
+  `result.run_id` round-trip.
+- `resources.py` — an LRU `RunCache` (20 runs max) plus the MCP resources
+  that surface it.
+- `tasks.py` — `TaskManager` + daemon-thread workers used by the
+  `start_background_analysis` / `get_task_status` / `get_task_result` /
+  `list_background_tasks` tools.
 
-1. Locating the `astharbor` binary (PATH lookup, then build directory fallback).
-2. Invoking it with the appropriate subcommand and flags.
-3. Interpreting exit codes (>= 2 is an operational failure; 0-1 are normal).
-4. Returning stdout as the tool result.
-
-### Pydantic Models
-
-The `models.py` module defines Pydantic v2 models that mirror the C++ data
-structures: `Fix`, `Finding`, `AnalysisResult`, and `ApplyResult`. These use
-`Field(alias=...)` to map between the camelCase JSON produced by the CLI and
-snake_case Python attributes.
-
-### Resource Endpoints
-
-The MCP server can expose resources for cached analysis runs, allowing clients
-to reference findings by run ID and index after an analysis completes.
-
-See [mcp.md](mcp.md) for the full MCP reference.
+See [mcp.md](mcp.md) for the tool/resource catalog.
 
 ## Data Flow
 
-### Analysis Flow
+### Analysis flow
 
 ```
 Source files (*.cpp, *.c)
@@ -214,104 +230,206 @@ Source files (*.cpp, *.c)
 CommonOptionsParser (resolves compile_commands.json)
         |
         v
-ClangTool (Clang LibTooling frontend)
+(optional) --changed-only filter via `git diff --name-only`
         |
         v
-AST parsing (per translation unit)
+runAnalysis() chooses sequential or N-worker round-robin partitioning
         |
         v
-MatchFinder dispatches to registered Rule callbacks
+For each chunk: fresh RuleRegistry, ClangTool, MatchFinder
         |
         v
-Each Rule::run() inspects the match, creates Finding objects
-(optionally with Fix objects attached)
+Clang LibTooling drives AST parsing for each translation unit
         |
         v
-Analyzer collects all findings into an AnalysisResult
+MatchFinder dispatches to each Rule::run() callback
         |
         v
-IEmitter formats the result (text / JSON / SARIF) to stdout
+Rule::run() emits Findings (optionally with Fix objects) via makeFinding()
+        |
+        v
+Worker returns (findings, exitCode); main thread merges + sorts
+(file, line, column, ruleId) ascending, assigns sequential findingIds
+        |
+        v
+IEmitter serializes the AnalysisResult (text / JSON / SARIF) to stdout
+(optionally persisted via RunStore::save when --save-run is passed)
 ```
 
-### Fix Flow
+### Fix flow
 
 ```
-Source files
-        |
-        v
-Full analysis (same as above) produces findings with fixes
-        |
-        v
-Filter by --rule pattern (if provided)
-        |
-        v
-FixApplicator::preview()      or      FixApplicator::apply()
-  (print summary)                       |
-                                        v
-                                  Read file content
-                                        |
-                                        v
-                                  Create .bak backup (if --backup)
-                                        |
-                                        v
-                                  Sort fixes by offset descending
-                                        |
-                                        v
-                                  Apply replacements end-to-start
-                                        |
-                                        v
-                                  Write modified file
+Source files            or            --run-id=ID
+        |                                   |
+        v                                   v
+runAnalysis() produces               RunStore::load()
+findings + fixes                     hydrates a saved AnalysisResult
+        \                                   /
+         \_________________  _______________/
+                           \/
+                           v
+       Filter by --rule substring and --finding-id
+                           |
+                           v
+   +----------- preview mode ------------+---------- apply mode ----------+
+   | FixApplicator::preview() writes     | FixApplicator::apply():        |
+   | a per-file text summary, or         |   1. read each target file     |
+   | JsonEmitter re-emits the filtered   |   2. optional .bak backup      |
+   | findings as JSON.                   |   3. sort fixes by offset desc |
+   +-------------------------------------+   4. apply safe replacements   |
+                                             5. write modified file      |
+                                             returns ApplyResult        |
+                                        +---------------------------------+
 ```
 
 ## Extension Points
 
-### Adding a New Rule
+### Adding a new rule
 
-1. Create a header file in the appropriate `src/rules/<category>/` directory.
-2. Define a class that inherits from `astharbor::Rule`.
-3. Implement all pure virtual methods (`id`, `title`, `category`, `summary`,
-   `defaultSeverity`, `registerMatchers`, `run`).
-4. In `run()`, push `Finding` objects (optionally with `Fix` objects) to the
-   inherited `findings` vector.
-5. Include the header in `src/core/rule_registry.cpp` and add a
-   `registerRule(std::make_unique<YourRule>())` call in `registerBuiltinRules()`.
+1. Create `src/rules/<category>/<name>.hpp`. Declare a class inheriting
+   from `astharbor::Rule`. The rules are header-only.
+2. Implement `id()`, `title()`, `category()`, `summary()`,
+   `defaultSeverity()`, `registerMatchers()`, and `run()`.
+3. Inside `run()`, use the base-class helpers (`makeFinding()`,
+   `emitFinding()`, `nextFixId()`) to avoid boilerplate.
+4. Include the header in `src/core/rule_registry.cpp` and add a
+   `registry.registerRule(std::make_unique<YourRule>())` call inside
+   `registerBuiltinRules()`.
 
-No other changes are needed. The rule is automatically available in all
-frontends, all output formats, and the fix workflow.
+The rule is then automatically visible to every CLI subcommand, every
+emitter (text/JSON/SARIF), the fix pipeline, and the MCP frontend.
 
-### Adding a New Emitter
+### Adding a CLI flag
 
-1. Create a class that implements `IEmitter` (a single `emit()` method).
-2. Wire it into the CLI's format selection logic in `src/cli/main.cpp`.
+1. Declare a new `llvm::cl::opt<...>` at module scope in
+   `src/cli/main.cpp` with `llvm::cl::cat(ASTHarborCategory)`.
+2. Read its value inside `runAnalysis()` (for analyze/fix-time flags) or
+   the appropriate command handler.
+3. If it changes the subprocess invocation shape, also update
+   `print_help()` so the CLI help text stays accurate.
+
+### Adding an MCP tool
+
+1. Open `python/astharbor_mcp/server.py` and declare a new function
+   decorated with `@mcp.tool()`.
+2. Call into `cli_bridge` for synchronous tools, or
+   `tasks.manager.start(kind, worker, ...)` for long-running ones.
+3. For a new background worker, add the worker function to
+   `python/astharbor_mcp/tasks.py` following the
+   `analyze_project_worker` signature: it receives the `Task` object as
+   its first argument and must return a JSON string (or a value that is
+   JSON-serializable).
+
+### Adding a new emitter
+
+1. Implement `IEmitter` (a single `emit()` method) in a new file under
+   `src/emitters/`.
+2. Wire it into the format selection in `main.cpp`'s `analyze` handler.
 
 ## Design Decisions
 
-### Why Clang LibTooling?
+### Clang LibTooling for the frontend
 
-Clang LibTooling provides a full, semantically correct AST with type
-information, macro expansion tracking, and source location mapping. Unlike
-regex-based or tree-sitter-based approaches, LibTooling can reason about
-overload resolution, template instantiation, implicit conversions, and other
-language features that matter for accurate static analysis of C and C++ code.
+LibTooling gives the analyzer a full, semantically correct AST with type
+information, macro expansion tracking, and source-location mapping. Unlike
+regex- or tree-sitter-based approaches, LibTooling can reason about
+overload resolution, template instantiation, implicit conversions, and
+other constructs that matter for accurate C/C++ analysis.
 
-### Why a Subprocess Bridge for MCP?
+### Subprocess bridge for MCP
 
-The MCP frontend invokes the CLI binary rather than embedding a C++ library:
+The MCP frontend invokes the CLI binary rather than embedding a C++ library
+inside Python:
 
-- **Isolation**: a crash in Clang analysis does not bring down the MCP server.
-- **Simplicity**: no native Python bindings or FFI layer to maintain.
-- **Deployment flexibility**: the Python package and the C++ binary can be
-  built, versioned, and distributed independently.
-- **Reproducibility**: the MCP server produces exactly the same results as
-  a direct CLI invocation.
+- **Isolation** — a crash in Clang during analysis cannot bring down the
+  MCP server or the agent conversation.
+- **Simplicity** — no native Python bindings or FFI to maintain.
+- **Reproducibility** — the MCP server produces exactly the same JSON a
+  user would get from an equivalent CLI invocation.
+- **Deployment flexibility** — the Python package and the C++ binary can
+  be versioned, cached, and distributed independently.
 
-### Why No LLM in the Core?
+### No LLM in the analyzer core
 
-ASTHarbor is a deterministic, rule-based analyzer. Every finding is the direct
-result of a concrete AST pattern match. This means:
+Every finding is the deterministic output of a concrete AST pattern match.
+Results are reproducible across runs, there are no API keys or network
+calls, false-positive rates are predictable per rule, and the tool can
+serve as a ground-truth data source for LLM-powered agents without
+introducing circular dependencies.
 
-- Results are reproducible across runs.
-- No API keys, network calls, or token budgets are required.
-- False positive rates are predictable and controllable per rule.
-- The tool can serve as a reliable ground-truth data source for LLM-powered
-  agents (via MCP) without introducing circular dependencies.
+### Header-only rule classes + shared base helpers
+
+Each rule is a single header under `src/rules/<category>/`. The base
+`Rule` class provides `emitFinding`, `makeFinding`, and `nextFixId` so
+individual rules do not repeat source-location decomposition, system-header
+filtering, or fix-id bookkeeping. This is what makes it practical to
+maintain ~46 rules without a library of helpers scattered across the tree.
+
+### Parallel analysis via fresh per-worker registries
+
+`--jobs=N` partitions the source list round-robin and hands each chunk to a
+worker that owns its own `RuleRegistry`, `MatchFinder`, and `ClangTool`.
+This avoids sharing mutable state between threads and keeps the sequential
+path (N=1) as fast as ever. After all workers finish, findings are merged
+and sorted by `(file, line, column, ruleId)` so output is deterministic
+regardless of which worker finishes first.
+
+## Key Code Locations
+
+For contributors, the landmarks are:
+
+- `include/astharbor/rule.hpp` — the base `Rule` class and its helpers.
+- `include/astharbor/rule_registry.hpp`, `src/core/rule_registry.cpp` — the
+  central list of shipped rules.
+- `include/astharbor/analyzer.hpp`, `src/core/analyzer.cpp` — the
+  `Analyzer` driver used by library consumers; `generateRunId()` and
+  `assignFindingIds()` live in the header.
+- `include/astharbor/run_store.hpp` — JSON persistence layer for saved runs.
+- `include/astharbor/fix_applicator.hpp` — preview/apply entry points for
+  fixes.
+- `src/emitters/{text,json,sarif}_emitter.{cpp,hpp}` — the three shipped
+  emitters.
+- `src/cli/main.cpp` — CLI dispatch, flag declarations, parallel-analysis
+  scheduler, compare-command shell-out.
+- `python/astharbor_mcp/server.py` — MCP tool and resource registrations.
+- `python/astharbor_mcp/cli_bridge.py` — subprocess wrapper for the native
+  binary.
+- `python/astharbor_mcp/tasks.py` — background task manager and workers.
+- `python/astharbor_mcp/resources.py` — in-memory LRU run cache.
+
+## What's New Since the Original Docs
+
+The analyzer has grown substantially from the initial MVP snapshot the
+earlier docs described. Notable changes:
+
+- **46 built-in rules** (up from 27), with new `ub`, `portability`, and
+  `best-practice` categories and additional security rules.
+- **Three waves of undefined-behavior rules** (`ub/` — 15 rules total)
+  covering shifts, arithmetic overflow shapes, polymorphic-deletion
+  mistakes, array/`new[]` mismatches, type-punning via casts, and more.
+- **Full CLI flag set from the original specification**: `--checks`,
+  `--save-run`, `--run-id`, `--finding-id`, `--jobs`, `--changed-only`,
+  `--verbose`, `--std`, `--compiler-profile`, `--rule`, `--apply`,
+  `--dry-run`, `--backup`, `--format`.
+- **Parallel analysis** via `--jobs=N` with deterministic output.
+- **Git integration** via `--changed-only` for pre-commit / CI pre-check
+  workflows.
+- **Run persistence** under `~/.astharbor/runs/` plus
+  `fix --run-id`/`--finding-id` replay.
+- **Stable sequential `findingId` assignment** so a saved run stays
+  addressable.
+- **Enriched SARIF output** — `tool.driver.rules` with full metadata,
+  `ruleIndex` back-references, and fixes encoded via the standard SARIF
+  `fixes`/`artifactChanges`/`replacements` structure.
+- **MCP background task system** — `TaskManager` + daemon workers plus
+  four new tools (`start_background_analysis`, `get_task_status`,
+  `get_task_result`, `list_background_tasks`) so long-running project
+  scans do not block the MCP client.
+- **MCP run cache** — LRU of 20 `AnalysisResult`s backing the
+  `read_finding` tool and the `run://`, `finding://`, `rule://` resources.
+- **`compare` command** — minimal `clang++`/`g++` diagnostic counter as a
+  first iteration; full cross-compiler diffing is still future work.
+
+Still outstanding: Tier 2 CFG-based rules (`use-after-move`,
+`uninitialized-local`, `double-free-local`) and any form of interprocedural
+or whole-program analysis.

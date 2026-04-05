@@ -1,8 +1,10 @@
 # CLI Reference
 
-ASTHarbor provides a single binary (`astharbor`) with several subcommands for
-analyzing C/C++ source code, applying fixes, listing rules, and checking
-toolchain health.
+ASTHarbor ships a single binary (`astharbor`) with five subcommands:
+`analyze`, `fix`, `rules`, `doctor`, and `compare`. All commands share a
+common option parser built on LLVM's `CommandLine` library. The `analyze`
+and `fix` commands additionally use Clang's `CommonOptionsParser` for
+source-path and compilation-database resolution.
 
 ## General Usage
 
@@ -10,133 +12,186 @@ toolchain health.
 astharbor <command> [options] [<path>...] [-- <extra-compiler-flags>]
 ```
 
-The trailing `--` separator is **required** for the `analyze` and `fix`
-commands. These commands use Clang's `CommonOptionsParser` internally, which
-expects `--` to delimit source paths from compiler flags. If you have no extra
-compiler flags to pass, still include the trailing `--`:
+The trailing `--` separator is **required** for `analyze` and `fix` because
+`CommonOptionsParser` uses it to delimit source paths from extra compiler
+flags. If you have no extra flags to pass, still include the trailing `--`:
 
 ```sh
 astharbor analyze src/main.cpp --
 ```
 
-## Commands
+## Exit Codes
+
+| Code | Meaning                                                      |
+|------|--------------------------------------------------------------|
+| 0    | Success. For `analyze` and `fix`, no findings were produced. |
+| 1    | Success, but findings are present.                           |
+| 2    | Operational failure: invalid arguments, tool failure, load errors, or an unimplemented branch. |
+
+`doctor` returns 0 when healthy, 1 when unhealthy. `rules` and `compare`
+return 0 on success and 2 on argument or invocation errors.
 
 ---
 
-### `astharbor analyze`
+## `astharbor analyze`
 
 Run static analysis on the specified source files and emit findings.
 
 ```
-astharbor analyze [<path>...] [--format=FORMAT] [-- <extra-compiler-flags>]
+astharbor analyze [<path>...] [options] [-- <extra-compiler-flags>]
 ```
 
-If no source paths are given, the tool auto-discovers all files from the
-compilation database (`compile_commands.json`).
+If no source paths are supplied, the tool auto-discovers all files from the
+compilation database (`compile_commands.json`) resolved by Clang's
+`CommonOptionsParser`.
 
-#### Options
+### Options
 
-| Option              | Description                                          | Default |
-|---------------------|------------------------------------------------------|---------|
-| `--format=FORMAT`   | Output format: `text`, `json`, or `sarif`            | `text`  |
-| `--compdb PATH`     | Path to directory containing `compile_commands.json` (resolved by Clang's `CommonOptionsParser`) | auto-detected |
-| `-- <flags>`        | Extra compiler flags passed to Clang (e.g., `-std=c++20 -I/opt/include`) | none |
+| Option                       | Description                                                                                                                               | Default  |
+|------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| `--format=FORMAT`            | Output format: `text`, `json`, or `sarif`                                                                                                 | `text`   |
+| `--checks=PATTERNS`          | Comma-separated substring patterns over rule ids. Prefix a pattern with `-` to *disable* matching rules. Empty means "all rules on".     | `""`     |
+| `--save-run[=PATH]`          | Persist the result to disk so a later `fix --run-id` can reuse it. With no value, writes `~/.astharbor/runs/<runId>.json`.              | disabled |
+| `--jobs=N`                   | Run analysis across N parallel workers. Sources are split round-robin; each worker owns a fresh `RuleRegistry` and `ClangTool`; findings are merged and sorted deterministically. | `1`      |
+| `--changed-only`             | Intersect the source list with `git diff --name-only` (uncommitted + staged). Falls back to analyzing everything if git is unavailable. | disabled |
+| `--verbose`                  | Print per-file progress, active worker count, and timing to stderr.                                                                     | disabled |
+| `--std=VALUE`                | Language standard for single-file mode, e.g. `c++20`, `c17`. Prepended as `-std=<value>` via `ArgumentsAdjuster`.                        | unset    |
+| `--compiler-profile=PROFILE` | Compiler dialect profile: `auto` (default), `clang`, or `gcc`. The `gcc` profile inserts `-fgnu-keywords` and `-fgnu89-inline`.          | `auto`   |
+| `-p <dir>`                   | Standard Clang tooling flag for specifying the build directory containing `compile_commands.json`.                                       | auto     |
+| `-- <flags>`                 | Extra compiler flags forwarded verbatim to Clang.                                                                                         | none     |
 
-#### Examples
+### Examples
 
-Analyze a single file with text output:
+Basic text output:
 
 ```sh
 astharbor analyze src/main.cpp --
 ```
 
-Analyze a directory with JSON output:
+JSON for pipelines:
 
 ```sh
 astharbor analyze src/ --format=json --
 ```
 
-Analyze with SARIF output for CI integration:
+SARIF for GitHub Code Scanning:
 
 ```sh
 astharbor analyze src/ --format=sarif -- > results.sarif
 ```
 
-Analyze with extra include paths:
+Rule filtering: enable only security and modernize rules, and disable
+`no-rand`:
+
+```sh
+astharbor analyze src/ --checks=security,modernize,-no-rand --
+```
+
+Parallel analysis:
+
+```sh
+astharbor analyze src/ --jobs=8 --verbose --
+```
+
+Changed-only (CI pre-commit style):
+
+```sh
+astharbor analyze --changed-only --format=json --
+```
+
+Persist a run for later fixing:
+
+```sh
+astharbor analyze src/ --save-run --format=json --
+```
+
+Single-file mode with an explicit standard (no compile_commands.json):
+
+```sh
+astharbor analyze examples/c_sample/foo.c --std=c17 -- -I./include
+```
+
+Pass extra compiler flags:
 
 ```sh
 astharbor analyze src/main.cpp -- -I/usr/local/include -DDEBUG
 ```
 
-Analyze all files in the compilation database (no paths needed):
-
-```sh
-astharbor analyze --format=json --
-```
-
 ---
 
-### `astharbor fix`
+## `astharbor fix`
 
-Preview or apply automatic fixes for findings that have associated fix
-information. The command first runs a full analysis, then processes the fixable
-findings.
+Preview or apply automatic fixes for findings that ship fix information. By
+default the command first runs a full analysis, then processes the fixable
+findings. With `--run-id` it skips analysis and loads a previously persisted
+run instead.
 
 ```
-astharbor fix [<path>...] [--apply] [--dry-run] [--rule=PATTERN] [--backup] [--format=FORMAT] [-- <extra-compiler-flags>]
+astharbor fix [<path>...] [options] [-- <extra-compiler-flags>]
 ```
 
-By default (without `--apply`), the command operates in preview mode, showing
-what fixes are available without modifying any files.
+Without `--apply`, the command runs in preview mode — nothing is written to
+disk. When `--apply` is used, only fixes with `safety: "safe"` are written;
+`"review"` and `"manual"` fixes are reported and skipped.
 
-#### Options
+### Options
 
-| Option              | Description                                          | Default       |
-|---------------------|------------------------------------------------------|---------------|
-| `--dry-run`         | Preview fixes without applying (same as default)     | enabled       |
-| `--apply`           | Apply safe fixes to source files                     | disabled      |
-| `--rule=PATTERN`    | Only process fixes for rule IDs matching PATTERN (substring match) | all rules |
-| `--backup`          | Create `.bak` backup files before modifying sources  | disabled      |
-| `--format=FORMAT`   | Output format: `text` or `json`                      | `text`        |
-| `-- <flags>`        | Extra compiler flags passed to Clang                 | none          |
+| Option             | Description                                                                                                                         | Default      |
+|--------------------|-------------------------------------------------------------------------------------------------------------------------------------|--------------|
+| `--dry-run`        | Preview fixes without applying. Same as the default behavior.                                                                        | implicit     |
+| `--apply`          | Apply safe fixes to source files.                                                                                                    | disabled     |
+| `--rule=PATTERN`   | Only process fixes whose rule id contains the substring PATTERN.                                                                     | all rules    |
+| `--run-id=ID`      | Load a previously saved run (`~/.astharbor/runs/<ID>.json`) instead of re-analyzing. Skips source parsing entirely.                  | disabled     |
+| `--finding-id=ID`  | Restrict work to a single finding id from the loaded (or freshly produced) run.                                                      | disabled     |
+| `--backup`         | Write a `.bak` copy of each file before modifying it.                                                                                | disabled     |
+| `--format=FORMAT`  | Output format for summaries: `text` or `json`.                                                                                        | `text`       |
+| `--checks`, `--jobs`, `--changed-only`, `--verbose`, `--std`, `--compiler-profile` | Same semantics as `analyze` — used when `fix` re-runs the analyzer to discover findings. | inherited |
+| `-- <flags>`       | Extra compiler flags forwarded to Clang.                                                                                              | none         |
 
-When `--apply` is given, only fixes with `safety: "safe"` are applied. Fixes
-marked `"review"` or `"manual"` are skipped and reported in the summary.
+### Examples
 
-#### Examples
-
-Preview all available fixes:
+Preview every available fix on a tree:
 
 ```sh
 astharbor fix src/ --
 ```
 
-Preview fixes for a specific rule:
+Preview only one rule:
 
 ```sh
 astharbor fix src/ --rule=modernize/use-nullptr --
 ```
 
-Apply safe fixes with backup:
+Apply safe fixes with backups:
 
 ```sh
 astharbor fix src/ --apply --backup --
 ```
 
-Apply fixes and get JSON output:
+Apply fixes and consume the JSON summary:
 
 ```sh
 astharbor fix src/ --apply --format=json --
 ```
 
-Text output in apply mode:
+Reuse a persisted run and fix only one finding:
+
+```sh
+astharbor analyze src/ --save-run --format=json --
+# … note the runId …
+astharbor fix --run-id=run-18f3a2b4c10 --finding-id=finding-0003 --apply --
+```
+
+### Output shapes
+
+Apply-mode text output:
 
 ```
 Applied 5 fix(es) across 3 file(s).
 Skipped 2 non-safe fix(es).
 ```
 
-JSON output in apply mode:
+Apply-mode JSON output:
 
 ```json
 {
@@ -147,7 +202,7 @@ JSON output in apply mode:
 }
 ```
 
-Preview mode text output:
+Preview-mode text output:
 
 ```
 --- src/main.cpp ---
@@ -158,25 +213,28 @@ Preview mode text output:
 Summary: 1 fix(es) available (1 safe)
 ```
 
+Preview-mode JSON output mirrors the `analyze --format=json` shape but only
+includes findings that carry a `fixes` array.
+
 ---
 
-### `astharbor rules`
+## `astharbor rules`
 
-List all registered analysis rules.
+List every rule registered in the current build.
 
 ```
 astharbor rules [--format=FORMAT]
 ```
 
-#### Options
+### Options
 
-| Option              | Description                                          | Default |
-|---------------------|------------------------------------------------------|---------|
-| `--format=FORMAT`   | Output format: `text` or `json`                      | `text`  |
+| Option             | Description                                          | Default |
+|--------------------|------------------------------------------------------|---------|
+| `--format=FORMAT`  | Output format: `text` or `json`                      | `text`  |
 
-#### Examples
+### Examples
 
-List rules in text format:
+Text:
 
 ```sh
 astharbor rules
@@ -192,7 +250,7 @@ bugprone/assignment-in-condition - Assignment in condition [bugprone] (warning)
 ...
 ```
 
-List rules in JSON format:
+JSON:
 
 ```sh
 astharbor rules --format=json
@@ -207,22 +265,23 @@ astharbor rules --format=json
 
 ---
 
-### `astharbor doctor`
+## `astharbor doctor`
 
-Check the toolchain environment: whether rules are registered and whether a
-compilation database is available in the current directory.
+Report on the state of the ASTHarbor toolchain: how many rules are
+registered, and whether a compilation database can be discovered from the
+current working directory.
 
 ```
 astharbor doctor [--format=FORMAT]
 ```
 
-#### Options
+### Options
 
-| Option              | Description                                          | Default |
-|---------------------|------------------------------------------------------|---------|
-| `--format=FORMAT`   | Output format: `text` or `json`                      | `text`  |
+| Option             | Description                                          | Default |
+|--------------------|------------------------------------------------------|---------|
+| `--format=FORMAT`  | Output format: `text` or `json`                      | `text`  |
 
-#### Examples
+### Examples
 
 ```sh
 astharbor doctor
@@ -230,7 +289,7 @@ astharbor doctor
 
 ```
 ASTHarbor Doctor
-  Rules registered: 27
+  Rules registered: 46
   Compilation database: found
   Status: OK
 ```
@@ -241,7 +300,7 @@ astharbor doctor --format=json
 
 ```json
 {
-  "rulesRegistered": 27,
+  "rulesRegistered": 46,
   "compilationDatabase": true,
   "healthy": true
 }
@@ -249,52 +308,89 @@ astharbor doctor --format=json
 
 ---
 
-### `astharbor compare`
+## `astharbor compare`
 
-Compare analysis results between two runs or branches. This command is
-**not yet implemented** and will exit with code 2.
+Run `clang++` and `g++` on the same source file with `-fsyntax-only -Wall
+-Wextra` and report a minimal diagnostic counter for each compiler. This is a
+sanity check that your code parses under both frontends — it is **not** a
+full cross-compiler diff.
+
+```
+astharbor compare <file> [--format=FORMAT]
+```
+
+### Options
+
+| Option             | Description                                          | Default |
+|--------------------|------------------------------------------------------|---------|
+| `--format=FORMAT`  | Output format: `text` or `json`                      | `text`  |
+
+The language (`-xc` vs `-xc++`) is chosen from the file extension
+(`.cpp`, `.cc`, `.cxx`, `.hpp` → C++; everything else → C). If either
+compiler is missing from `PATH`, that half of the report is marked
+unavailable.
+
+### Examples
 
 ```sh
-astharbor compare
-# Error: 'compare' command is not yet implemented.
+astharbor compare src/main.cpp
+```
+
+```
+ASTHarbor Compare: src/main.cpp
+  clang++: exit=0, diagnostics=2
+  g++:     exit=0, diagnostics=1
+  Agreement: NO — compilers differ
+```
+
+```sh
+astharbor compare src/main.cpp --format=json
+```
+
+```json
+{
+  "file": "src/main.cpp",
+  "clang": {"available": true, "exit": 0, "diagnostics": 2},
+  "gcc": {"available": true, "exit": 0, "diagnostics": 1},
+  "agreement": false
+}
 ```
 
 ---
 
-## Exit Codes
-
-| Code | Meaning                                                      |
-|------|--------------------------------------------------------------|
-| 0    | Success. For `analyze` and `fix`, no findings were produced. |
-| 1    | Success, but findings are present. For `doctor`, the environment is unhealthy. |
-| 2+   | Operational failure: invalid arguments, compilation errors, file I/O errors, or unimplemented command. |
-
 ## Compilation Database
 
-ASTHarbor relies on a `compile_commands.json` file to understand compiler
-flags, include paths, and defines for each translation unit. This file is
-typically generated by your build system:
+ASTHarbor relies on a `compile_commands.json` file to learn the exact
+compiler flags, include paths, and macro definitions for each translation
+unit. Typical build systems produce it as follows:
 
-- **Meson**: generated automatically in the build directory.
+- **Meson**: written automatically into the build directory.
 - **CMake**: pass `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
 - **Bear**: wrap your make command with `bear -- make`.
 
-The `CommonOptionsParser` searches for `compile_commands.json` starting from
-the current directory and walking up to parent directories. You can also
-specify the path explicitly via the `-p` flag (a Clang tooling flag, passed
-after `--`):
+Clang's `CommonOptionsParser` searches for `compile_commands.json` starting
+at the current directory and walking up to parents. You can also specify the
+build directory explicitly via `-p`:
 
 ```sh
 astharbor analyze src/main.cpp -- -p /path/to/builddir
 ```
 
+For single-file runs where no compilation database exists, use `--std` (and
+optionally `--compiler-profile` and extra `-I/-D` flags after `--`) to
+provide the minimum context the frontend needs.
+
 ## Notes
 
-- The `analyze` and `fix` commands require a trailing `--` due to Clang
-  tooling's argument parsing conventions. Omitting it may cause unexpected
-  argument parsing behavior.
-- When no source files are specified, the tool attempts to discover them from
-  the compilation database. If the database is empty or missing, the tool
-  exits with code 2.
-- SARIF output is available only for the `analyze` command. The `fix` command
-  supports `text` and `json` formats.
+- `analyze` and `fix` require the trailing `--` because of
+  `CommonOptionsParser`'s argument grammar. Omitting it may cause confusing
+  argument-parsing errors.
+- When no source files are specified and the compilation database is empty
+  or missing, `analyze` exits with code 2.
+- SARIF output is produced only by `analyze`. `fix`, `rules`, `doctor`, and
+  `compare` support `text` and `json` only.
+- `--jobs=N` is ignored in single-file invocations (worker count is clamped
+  to the number of source files).
+- `--save-run` persists to `~/.astharbor/runs/` by default. The directory is
+  created on demand; if `$HOME` is unset, the tool falls back to the system
+  temp directory.
