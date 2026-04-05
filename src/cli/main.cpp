@@ -1,7 +1,11 @@
+#include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <sys/wait.h>
 #include <vector>
+#include <clang/Tooling/ArgumentsAdjusters.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
 #include "astharbor/rule_registry.hpp"
@@ -59,6 +63,21 @@ static llvm::cl::opt<std::string>
                           "'-' to disable matching rules instead."),
            llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<bool>
+    Verbose("verbose",
+            llvm::cl::desc("Print per-file progress, active rule count, and timing to stderr"),
+            llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<std::string>
+    Std("std",
+        llvm::cl::desc("Language standard to use in single-file mode, e.g. c++20, c17"),
+        llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<std::string>
+    CompilerProfile("compiler-profile",
+                    llvm::cl::desc("Compiler dialect profile: auto (default), clang, or gcc"),
+                    llvm::cl::init("auto"), llvm::cl::cat(ASTHarborCategory));
+
 void print_help() {
     std::cout << "ASTHarbor CLI\n";
     std::cout << "Commands:\n";
@@ -66,11 +85,15 @@ void print_help() {
     std::cout << "  fix <files...>      Preview or apply fixes\n";
     std::cout << "  rules               List available rules\n";
     std::cout << "  doctor              Check toolchain health\n";
+    std::cout << "  compare <file>      Compare clang vs gcc diagnostics on a file\n";
     std::cout << "\nAnalyze options:\n";
     std::cout << "  --checks=PATTERNS   Comma-separated rule-id substrings to enable;\n";
     std::cout << "                      prefix a pattern with '-' to disable matching rules\n";
     std::cout << "  --save-run[=PATH]   Persist result to ~/.astharbor/runs/<runId>.json or\n";
     std::cout << "                      to PATH for later `fix --run-id`\n";
+    std::cout << "  --verbose           Print progress and timing to stderr\n";
+    std::cout << "  --std=VALUE         Language standard in single-file mode (e.g. c++20)\n";
+    std::cout << "  --compiler-profile=P  Compiler dialect: auto (default), clang, or gcc\n";
     std::cout << "\nFix options:\n";
     std::cout << "  --apply             Apply safe fixes (default: preview only)\n";
     std::cout << "  --dry-run           Preview fixes without applying\n";
@@ -155,6 +178,7 @@ static std::optional<CommonOptionsParser> setupParser(int argc, const char **arg
 /// Run analysis and return findings. Returns empty vector on tool failure.
 static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                                                    const RuleRegistry &registry) {
+    const bool verbose = Verbose.getValue();
     std::vector<std::string> sourcePaths = parser.getSourcePathList();
     CompilationDatabase &compilationDb = parser.getCompilations();
 
@@ -165,11 +189,40 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                 << "Error: No source files specified and could not find any in the compilation database.\n";
             return {{}, 2};
         }
-        std::cout << "Auto-discovered " << sourcePaths.size()
-                  << " source files from build system.\n";
+        if (verbose) {
+            llvm::errs() << "[verbose] Auto-discovered " << sourcePaths.size()
+                         << " source files from compilation database\n";
+        }
+    }
+
+    if (verbose) {
+        llvm::errs() << "[verbose] Analyzing " << sourcePaths.size() << " file(s)\n";
+        for (const auto &path : sourcePaths) {
+            llvm::errs() << "[verbose]   " << path << "\n";
+        }
     }
 
     ClangTool tool(compilationDb, sourcePaths);
+
+    // Inject --std and --compiler-profile flags at the beginning of each
+    // compile command so they apply regardless of whether the sources came
+    // from a compilation database or the trailing `--` fixed database.
+    if (!Std.getValue().empty()) {
+        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+            ("-std=" + Std.getValue()).c_str(), ArgumentInsertPosition::BEGIN));
+    }
+    const std::string profile = CompilerProfile.getValue();
+    if (profile == "gcc") {
+        // Enable GNU extensions so GCC-specific code parses cleanly under
+        // Clang libtooling.
+        tool.appendArgumentsAdjuster(
+            getInsertArgumentAdjuster("-fgnu-keywords", ArgumentInsertPosition::BEGIN));
+        tool.appendArgumentsAdjuster(
+            getInsertArgumentAdjuster("-fgnu89-inline", ArgumentInsertPosition::BEGIN));
+    } else if (profile != "auto" && profile != "clang") {
+        llvm::errs() << "Warning: unknown --compiler-profile '" << profile
+                     << "', falling back to auto\n";
+    }
 
     // Build the active rule set honouring --checks. Rules outside the set
     // are neither registered nor polled for findings, so the matcher engine
@@ -186,7 +239,16 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         activeRules.push_back(rule.get());
     }
 
+    if (verbose) {
+        llvm::errs() << "[verbose] " << activeRules.size() << " of "
+                     << registry.getRules().size() << " rule(s) active\n";
+    }
+
+    auto startTime = std::chrono::steady_clock::now();
     int toolExitCode = tool.run(newFrontendActionFactory(&finder).get());
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now() - startTime)
+                       .count();
 
     AnalysisResult result;
     result.runId = generateRunId();
@@ -196,6 +258,12 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
         result.findings.insert(result.findings.end(), ruleFindings.begin(), ruleFindings.end());
     }
     assignFindingIds(result);
+
+    if (verbose) {
+        llvm::errs() << "[verbose] Analysis completed in " << elapsed << " ms, "
+                     << result.findings.size() << " finding(s), tool exit "
+                     << toolExitCode << "\n";
+    }
 
     int exitCode = (toolExitCode != 0) ? 2 : (result.findings.empty() ? 0 : 1);
     return {std::move(result), exitCode};
@@ -415,8 +483,87 @@ int main(int argc, const char **argv) {
         return healthy ? 0 : 1;
 
     } else if (command == "compare") {
-        llvm::errs() << "Error: 'compare' command is not yet implemented.\n";
-        return 2;
+        if (argc < 3) {
+            llvm::errs() << "Usage: astharbor compare <file>\n";
+            return 2;
+        }
+        std::string sourceFile;
+        for (int index = 2; index < argc; ++index) {
+            std::string arg = argv[index];
+            if (arg == "--" || arg.starts_with("--")) {
+                continue;
+            }
+            sourceFile = arg;
+            break;
+        }
+        if (sourceFile.empty()) {
+            llvm::errs() << "Error: compare requires a source file argument\n";
+            return 2;
+        }
+
+        const bool isCxx = sourceFile.ends_with(".cpp") || sourceFile.ends_with(".cc") ||
+                           sourceFile.ends_with(".cxx") || sourceFile.ends_with(".hpp");
+        auto runCompiler = [&](const std::string &compiler) -> std::pair<int, int> {
+            std::string langFlag = isCxx ? "-xc++" : "-xc";
+            std::string command = compiler + " " + langFlag +
+                                   " -fsyntax-only -Wall -Wextra \"" + sourceFile +
+                                   "\" 2>&1";
+            FILE *pipe = popen(command.c_str(), "r");
+            if (pipe == nullptr) {
+                return {-1, 0};
+            }
+            int warningCount = 0;
+            char buffer[1024];
+            while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                std::string line = buffer;
+                if (line.find("warning:") != std::string::npos ||
+                    line.find("error:") != std::string::npos) {
+                    warningCount++;
+                }
+            }
+            int status = pclose(pipe);
+            int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            return {exitCode, warningCount};
+        };
+
+        auto [clangExit, clangDiags] = runCompiler("clang++");
+        auto [gccExit, gccDiags] = runCompiler("g++");
+
+        std::string formatValue = extractFormat(argc, argv);
+        if (formatValue == "json") {
+            std::cout << "{\n";
+            std::cout << "  \"file\": \"" << sourceFile << "\",\n";
+            std::cout << "  \"clang\": {\"available\": " << (clangExit >= 0 ? "true" : "false")
+                      << ", \"exit\": " << clangExit << ", \"diagnostics\": " << clangDiags
+                      << "},\n";
+            std::cout << "  \"gcc\": {\"available\": " << (gccExit >= 0 ? "true" : "false")
+                      << ", \"exit\": " << gccExit << ", \"diagnostics\": " << gccDiags
+                      << "},\n";
+            std::cout << "  \"agreement\": "
+                      << (clangExit == gccExit && clangDiags == gccDiags ? "true" : "false")
+                      << "\n";
+            std::cout << "}\n";
+        } else {
+            std::cout << "ASTHarbor Compare: " << sourceFile << "\n";
+            std::cout << "  clang++: ";
+            if (clangExit < 0) {
+                std::cout << "not available\n";
+            } else {
+                std::cout << "exit=" << clangExit << ", diagnostics=" << clangDiags << "\n";
+            }
+            std::cout << "  g++:     ";
+            if (gccExit < 0) {
+                std::cout << "not available\n";
+            } else {
+                std::cout << "exit=" << gccExit << ", diagnostics=" << gccDiags << "\n";
+            }
+            if (clangExit >= 0 && gccExit >= 0) {
+                bool agree = (clangExit == gccExit) && (clangDiags == gccDiags);
+                std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ")
+                          << "\n";
+            }
+        }
+        return 0;
     }
 
     print_help();
