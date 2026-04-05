@@ -1027,6 +1027,31 @@ TEST(UbUseAfterMoveRuleTest, IgnoresMoveWithNoSubsequentUse) {
     EXPECT_TRUE(result.findings.empty());
 }
 
+TEST(UbUseAfterMoveRuleTest, IgnoresMoveInBranchWithEarlyReturn) {
+    // CFG-based analysis: the use after the if-branch is unreachable from
+    // the move inside the branch because the branch returns. The previous
+    // source-order visitor flagged this as a false positive.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterMoveRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+                template <typename T> T&& move(const T& t);
+            }
+            struct Widget { int data; };
+            int test(Widget w, bool cond) {
+                if (cond) {
+                    Widget b(std::move(w));
+                    return 1;
+                }
+                return w.data;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
 // ─── double-free-local (Tier 2) ────────────────────────────────────────
 
 TEST(UbDoubleFreeLocalRuleTest, DetectsSameVariableDeletedTwice) {
