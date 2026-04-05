@@ -45,6 +45,7 @@
 #include "../rules/ub/casting_through_void.hpp"
 #include "../rules/ub/move_of_const.hpp"
 #include "../rules/ub/sizeof_array_parameter.hpp"
+#include "../rules/ub/use_after_move.hpp"
 
 namespace astharbor {
 
@@ -95,6 +96,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbCastingThroughVoidRule>());
     registry.registerRule(std::make_unique<UbMoveOfConstRule>());
     registry.registerRule(std::make_unique<UbSizeofArrayParameterRule>());
+    registry.registerRule(std::make_unique<UbUseAfterMoveRule>());
 }
 
 } // namespace astharbor

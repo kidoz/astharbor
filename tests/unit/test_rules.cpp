@@ -13,6 +13,7 @@
 #include "../../src/rules/ub/casting_through_void.hpp"
 #include "../../src/rules/ub/move_of_const.hpp"
 #include "../../src/rules/ub/sizeof_array_parameter.hpp"
+#include "../../src/rules/ub/use_after_move.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -951,6 +952,72 @@ TEST(UbSizeofArrayParameterRuleTest, IgnoresSizeofLocalArray) {
             unsigned long test() {
                 int arr[100];
                 return sizeof(arr);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── use-after-move (Tier 2) ───────────────────────────────────────────
+
+TEST(UbUseAfterMoveRuleTest, DetectsUseAfterMove) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterMoveRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+                template <typename T> T&& move(const T& t);
+            }
+            struct Widget { int data; };
+            int bad() {
+                Widget w{42};
+                Widget b(std::move(w));
+                (void)b;
+                return w.data;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/use-after-move");
+}
+
+TEST(UbUseAfterMoveRuleTest, IgnoresReassignmentBeforeReuse) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterMoveRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+                template <typename T> T&& move(const T& t);
+            }
+            struct Widget { int data; };
+            int ok() {
+                Widget w{42};
+                Widget b(std::move(w));
+                (void)b;
+                w = Widget{100};
+                return w.data;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbUseAfterMoveRuleTest, IgnoresMoveWithNoSubsequentUse) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterMoveRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+                template <typename T> T&& move(const T& t);
+            }
+            struct Widget { int data; };
+            void ok() {
+                Widget w{42};
+                Widget b(std::move(w));
+                (void)b;
             }
         )cpp");
 
