@@ -36,6 +36,7 @@ pure AST matcher.
 | `ub/uninitialized-local` | **(CFG)** Read of a local scalar reachable on a path with no prior write. | CERT EXP33-C, CWE-457 |
 | `ub/use-after-free` | **(CFG)** Dereference / call-arg use of a local pointer after `free()` with no reassignment. | CERT MEM30-C, CWE-416 |
 | `ub/use-after-move` | **(CFG)** Use of a local variable after `std::move` with no intervening reassignment. | `clang-tidy` `bugprone-use-after-move` |
+| `ub/virtual-call-in-ctor-dtor` | Virtual method called on `this` inside a ctor/dtor — derived override not dispatched. | CERT OOP50-CPP |
 
 ### `security/` — Security and CWE-mapped
 

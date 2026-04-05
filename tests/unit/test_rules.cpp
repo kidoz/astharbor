@@ -26,6 +26,7 @@
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
 #include "../../src/rules/ub/dangling_reference.hpp"
+#include "../../src/rules/ub/virtual_call_in_ctor_dtor.hpp"
 #include "../../src/rules/resource/leak_on_throw.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
@@ -2323,6 +2324,65 @@ TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresNonVariadicFunction") {
         std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
         R"cpp(
             void log(const char *msg) {}
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── ub/virtual-call-in-ctor-dtor (CERT OOP50-CPP) ───────────────────
+
+TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInCtor") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+        R"cpp(
+            struct Base {
+                virtual void init() {}
+                Base() { init(); }
+            };
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/virtual-call-in-ctor-dtor");
+}
+
+TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInDtor") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+        R"cpp(
+            struct Base {
+                virtual void cleanup() {}
+                ~Base() { cleanup(); }
+            };
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresNonVirtualCall") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+        R"cpp(
+            struct Base {
+                void setup() {}
+                Base() { setup(); }
+            };
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresVirtualCallOutsideCtorDtor") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+        R"cpp(
+            struct Base {
+                virtual void init() {}
+                void doInit() { init(); }
+            };
         )cpp");
 
     REQUIRE(result.success);

@@ -58,6 +58,7 @@
 #include "../rules/ub/uninitialized_local.hpp"
 #include "../rules/ub/null_deref_after_check.hpp"
 #include "../rules/ub/dangling_reference.hpp"
+#include "../rules/ub/virtual_call_in_ctor_dtor.hpp"
 #include "../rules/resource/leak_on_throw.hpp"
 
 namespace astharbor {
@@ -122,6 +123,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbUninitializedLocalRule>());
     registry.registerRule(std::make_unique<UbNullDerefAfterCheckRule>());
     registry.registerRule(std::make_unique<UbDanglingReferenceRule>());
+    registry.registerRule(std::make_unique<UbVirtualCallInCtorDtorRule>());
     registry.registerRule(std::make_unique<ResourceLeakOnThrowRule>());
 }
 
