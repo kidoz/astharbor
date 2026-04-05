@@ -83,25 +83,20 @@ class UbDoubleFreeLocalRule : public Rule {
     }
 
   private:
-    /// Recursively look for a `CXXDeleteExpr` operating on `targetVar`
-    /// that is not `excludedDelete` (the first delete itself).
+    /// Look for a `CXXDeleteExpr` operating on `targetVar` anywhere in
+    /// `stmt`'s subtree, excluding `excludedDelete` (the first delete
+    /// itself — its CFG element is where the BFS started).
     static std::optional<clang::SourceLocation>
     findSecondDeleteLocation(const clang::Stmt *stmt, const clang::VarDecl *targetVar,
                              const clang::CXXDeleteExpr *excludedDelete) {
-        if (stmt == nullptr || stmt == excludedDelete) {
+        const clang::Stmt *found = cfg::findFirstDescendantIf(
+            stmt, [targetVar, excludedDelete](const clang::Stmt *node) {
+                return node != excludedDelete && cfg::isDeleteOf(node, targetVar);
+            });
+        if (found == nullptr) {
             return std::nullopt;
         }
-        if (const auto *deleteExpr = llvm::dyn_cast<clang::CXXDeleteExpr>(stmt)) {
-            if (cfg::isDirectRefTo(deleteExpr->getArgument(), targetVar)) {
-                return deleteExpr->getExprLoc();
-            }
-        }
-        for (const clang::Stmt *child : stmt->children()) {
-            if (auto loc = findSecondDeleteLocation(child, targetVar, excludedDelete)) {
-                return loc;
-            }
-        }
-        return std::nullopt;
+        return llvm::cast<clang::CXXDeleteExpr>(found)->getExprLoc();
     }
 };
 

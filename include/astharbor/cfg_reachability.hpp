@@ -4,6 +4,7 @@
 #include <clang/AST/Expr.h>
 #include <clang/AST/ExprCXX.h>
 #include <clang/AST/Stmt.h>
+#include <clang/AST/StmtCXX.h>
 #include <clang/Analysis/CFG.h>
 #include <clang/Basic/SourceLocation.h>
 #include <deque>
@@ -83,6 +84,48 @@ inline bool isAssignmentTo(const clang::Stmt *stmt,
     return false;
 }
 
+/// Return true if `stmt` is a top-level `delete` (or `delete[]`) whose
+/// operand is `targetVar`. Sibling of `isAssignmentTo` for use as a
+/// `stopsPath` predicate in reachability walks over owning pointers.
+inline bool isDeleteOf(const clang::Stmt *stmt,
+                        const clang::VarDecl *targetVar) {
+    const auto *deleteExpr = llvm::dyn_cast_or_null<clang::CXXDeleteExpr>(stmt);
+    return deleteExpr != nullptr &&
+           isDirectRefTo(deleteExpr->getArgument(), targetVar);
+}
+
+/// Pre-order DFS over `stmt`'s subtree (including `stmt` itself)
+/// returning the first descendant that satisfies `predicate`, or
+/// nullptr if none matches. Used by rules to walk expression trees
+/// attached to a CFG element looking for a specific shape.
+template <typename Predicate>
+const clang::Stmt *findFirstDescendantIf(const clang::Stmt *stmt,
+                                          Predicate predicate) {
+    if (stmt == nullptr) {
+        return nullptr;
+    }
+    if (predicate(stmt)) {
+        return stmt;
+    }
+    for (const clang::Stmt *child : stmt->children()) {
+        if (const auto *result = findFirstDescendantIf(child, predicate)) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+/// Typed form of `findFirstDescendantIf`: return the first descendant
+/// (including `stmt`) that is-a `StmtType`, or nullptr.
+template <typename StmtType>
+const StmtType *findFirstDescendant(const clang::Stmt *stmt) {
+    const clang::Stmt *found = findFirstDescendantIf(
+        stmt, [](const clang::Stmt *node) {
+            return llvm::isa<StmtType>(node);
+        });
+    return llvm::dyn_cast_or_null<StmtType>(found);
+}
+
 /// Locate the (block, element-index) pair whose CFG statement owns
 /// `needle` (or a sub-expression containing it). Returns nullopt if the
 /// statement does not appear in any block — which can happen for
@@ -104,6 +147,24 @@ locateStmt(const clang::CFG &cfg, const clang::Stmt *needle) {
         }
     }
     return std::nullopt;
+}
+
+/// Return the CFG block whose terminator statement is `terminator`,
+/// or nullptr if no such block exists. Used by rules that need to
+/// reason about branches of a specific control-flow statement — the
+/// block's `succs()` then give the then/else or per-case successor
+/// blocks in a well-defined order.
+inline const clang::CFGBlock *
+locateTerminator(const clang::CFG &cfg, const clang::Stmt *terminator) {
+    if (terminator == nullptr) {
+        return nullptr;
+    }
+    for (const clang::CFGBlock *block : cfg) {
+        if (block != nullptr && block->getTerminatorStmt() == terminator) {
+            return block;
+        }
+    }
+    return nullptr;
 }
 
 /// Locate the (block, element-index) pair whose CFG statement declares
@@ -244,6 +305,12 @@ threadLocalCfgCache() {
                                      std::unique_ptr<clang::CFG>> cache;
     return cache;
 }
+
+inline std::unordered_map<const clang::FunctionDecl *, bool> &
+threadLocalTryCache() {
+    thread_local std::unordered_map<const clang::FunctionDecl *, bool> cache;
+    return cache;
+}
 } // namespace detail
 
 /// Return the CFG for `func` from the thread-local cache, building one
@@ -267,10 +334,31 @@ inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
     return result;
 }
 
-/// Drop every cached CFG. Must be called at end-of-TU because
-/// `FunctionDecl*` keys are only valid within one `ASTContext`.
+/// Return true if `func`'s body contains any `try` block. Result is
+/// memoized per-function in the thread-local cache so rules that
+/// conservatively skip try-containing functions (e.g. resource/leak-
+/// on-throw) pay the body-scan cost once per function instead of once
+/// per matched declaration.
+inline bool functionHasTryBlock(const clang::FunctionDecl *func) {
+    if (func == nullptr || !func->hasBody()) {
+        return false;
+    }
+    auto &cache = detail::threadLocalTryCache();
+    auto it = cache.find(func);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    bool hasTry = findFirstDescendant<clang::CXXTryStmt>(func->getBody()) != nullptr;
+    cache.emplace(func, hasTry);
+    return hasTry;
+}
+
+/// Drop every cached CFG and derived per-function memo. Must be called
+/// at end-of-TU because `FunctionDecl*` keys are only valid within one
+/// `ASTContext`.
 inline void clearCfgCache() {
     detail::threadLocalCfgCache().clear();
+    detail::threadLocalTryCache().clear();
 }
 
 } // namespace astharbor::cfg

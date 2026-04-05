@@ -17,14 +17,12 @@ namespace astharbor {
 ///
 /// Function parameters that are themselves references or pointers are
 /// never flagged in the reference-return case — their referents live
-/// in the caller's stack frame and are perfectly safe to pass through.
-/// Static and thread-local locals are also excluded; their storage
-/// outlives the function.
+/// in the caller's stack frame and are safe to pass through. Static
+/// and thread-local locals are also excluded; their storage outlives
+/// the function.
 ///
-/// Clang's own `-Wreturn-stack-address` and `-Wreturn-local-addr`
-/// overlap with these patterns, but running the rule inside ASTHarbor
-/// threads the findings through the SARIF emitter, MCP tools, and LSP
-/// diagnostics alongside the rest of the Tier 2 UB rules.
+/// Overlaps with Clang's `-Wreturn-stack-address`; re-implemented here
+/// so the finding flows through ASTHarbor's SARIF / MCP / LSP surface.
 class UbDanglingReferenceRule : public Rule {
   public:
     std::string id() const override { return "ub/dangling-reference"; }
@@ -38,47 +36,41 @@ class UbDanglingReferenceRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
+        auto localVarRef = declRefExpr(
+            to(varDecl(hasLocalStorage()).bind("local_var")));
+
         // Reference return: `T &f() { ... return local; }`
         Finder.addMatcher(
             returnStmt(
-                hasReturnValue(ignoringParenImpCasts(declRefExpr(
-                    to(varDecl(hasLocalStorage()).bind("local_var"))))),
+                hasReturnValue(ignoringParenImpCasts(localVarRef)),
                 hasAncestor(functionDecl(returns(referenceType()), isDefinition())
                                 .bind("enclosing_func")))
                 .bind("return_ref"),
             this);
-        // Pointer return with address-of: `T *f() { ... return &local; }`
+        // Pointer return, either via address-of a local or via array-to-
+        // pointer decay of a local array. Both shapes end up handing
+        // the caller a pointer into storage that ends at return.
         Finder.addMatcher(
             returnStmt(
-                hasReturnValue(ignoringParenImpCasts(unaryOperator(
-                    hasOperatorName("&"),
-                    hasUnaryOperand(ignoringParenImpCasts(declRefExpr(
-                        to(varDecl(hasLocalStorage()).bind("local_var")))))))),
+                hasReturnValue(ignoringParenImpCasts(anyOf(
+                    unaryOperator(hasOperatorName("&"),
+                                   hasUnaryOperand(ignoringParenImpCasts(localVarRef))),
+                    declRefExpr(
+                        to(varDecl(hasLocalStorage(), hasType(arrayType()))
+                               .bind("local_var")))))),
                 hasAncestor(functionDecl(returns(pointerType()), isDefinition())
                                 .bind("enclosing_func")))
                 .bind("return_addr"),
-            this);
-        // Pointer return with array-to-pointer decay: `T *f() { T p[N]; return p; }`
-        Finder.addMatcher(
-            returnStmt(
-                hasReturnValue(ignoringParenImpCasts(declRefExpr(
-                    to(varDecl(hasLocalStorage(), hasType(arrayType()))
-                           .bind("local_var"))))),
-                hasAncestor(functionDecl(returns(pointerType()), isDefinition())
-                                .bind("enclosing_func")))
-                .bind("return_array_decay"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *LocalVar = Result.Nodes.getNodeAs<clang::VarDecl>("local_var");
         const auto *ReturnRef = Result.Nodes.getNodeAs<clang::ReturnStmt>("return_ref");
-        const auto *ReturnAddr = Result.Nodes.getNodeAs<clang::ReturnStmt>("return_addr");
-        const auto *ReturnArrayDecay =
-            Result.Nodes.getNodeAs<clang::ReturnStmt>("return_array_decay");
+        const auto *ReturnAddr =
+            Result.Nodes.getNodeAs<clang::ReturnStmt>("return_addr");
         const clang::ReturnStmt *ReturnNode =
-            ReturnRef != nullptr ? ReturnRef
-                                 : (ReturnAddr != nullptr ? ReturnAddr : ReturnArrayDecay);
+            ReturnRef != nullptr ? ReturnRef : ReturnAddr;
         if (LocalVar == nullptr || ReturnNode == nullptr ||
             Result.SourceManager == nullptr) {
             return;
@@ -90,8 +82,8 @@ class UbDanglingReferenceRule : public Rule {
         }
         // Reference return: a parameter that is itself a reference or
         // pointer refers to caller-owned storage. Returning it is safe.
-        // (The other two patterns take the address of the parameter
-        // slot itself, which IS local — flag those unchanged.)
+        // (The pointer-return pattern takes the address of the
+        // parameter slot itself, which IS local — flag it unchanged.)
         if (ReturnRef != nullptr) {
             if (const auto *parm = llvm::dyn_cast<clang::ParmVarDecl>(LocalVar)) {
                 clang::QualType type = parm->getType();

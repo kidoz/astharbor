@@ -67,14 +67,21 @@ class BugproneSwappedArgumentsRule : public Rule {
             return;
         }
 
-        // Collect (index, name) pairs for arguments that are direct
-        // references to a named variable of length >= 2.
-        struct ArgInfo {
+        // Argument positions whose argument is a named-variable ref AND
+        // whose parameter has a length-≥2 name. Positions failing either
+        // check are eliminated once here so the inner loop is pure
+        // cross-match comparison.
+        struct Candidate {
             unsigned index;
-            llvm::StringRef name;
+            llvm::StringRef argName;
+            llvm::StringRef paramName;
         };
-        llvm::SmallVector<ArgInfo, 8> argNames;
+        llvm::SmallVector<Candidate, 8> candidates;
         for (unsigned index = 0; index < numFixed; ++index) {
+            llvm::StringRef paramName = params[index]->getName();
+            if (paramName.size() < 2) {
+                continue;
+            }
             const clang::Expr *arg = Call->getArg(index)->IgnoreParenImpCasts();
             const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(arg);
             if (ref == nullptr) {
@@ -84,37 +91,32 @@ class BugproneSwappedArgumentsRule : public Rule {
             if (varDecl == nullptr) {
                 continue;
             }
-            llvm::StringRef name = varDecl->getName();
-            if (name.size() < 2) {
+            llvm::StringRef argName = varDecl->getName();
+            if (argName.size() < 2) {
                 continue;
             }
-            argNames.push_back({index, name});
+            candidates.push_back({.index = index, .argName = argName,
+                                   .paramName = paramName});
         }
-        if (argNames.size() < 2) {
+        if (candidates.size() < 2) {
             return;
         }
 
-        for (size_t outer = 0; outer < argNames.size(); ++outer) {
-            for (size_t inner = outer + 1; inner < argNames.size(); ++inner) {
-                const auto &lhs = argNames[outer];
-                const auto &rhs = argNames[inner];
-                if (lhs.name == rhs.name) {
-                    continue;
-                }
-                llvm::StringRef paramLhs = params[lhs.index]->getName();
-                llvm::StringRef paramRhs = params[rhs.index]->getName();
-                if (paramLhs.size() < 2 || paramRhs.size() < 2) {
-                    continue;
-                }
+        for (size_t outer = 0; outer < candidates.size(); ++outer) {
+            for (size_t inner = outer + 1; inner < candidates.size(); ++inner) {
+                const auto &lhs = candidates[outer];
+                const auto &rhs = candidates[inner];
                 // A match requires each argument's variable name to be
                 // identical to the OTHER position's parameter name.
-                if (lhs.name == paramRhs && rhs.name == paramLhs) {
+                if (lhs.argName != rhs.argName &&
+                    lhs.argName == rhs.paramName && rhs.argName == lhs.paramName) {
                     emitFinding(
                         Call->getArg(lhs.index)->getBeginLoc(),
                         *Result.SourceManager,
-                        "Arguments '" + lhs.name.str() + "' and '" + rhs.name.str() +
+                        "Arguments '" + lhs.argName.str() + "' and '" +
+                            rhs.argName.str() +
                             "' appear swapped: they match the parameter names '" +
-                            paramRhs.str() + "' and '" + paramLhs.str() +
+                            rhs.paramName.str() + "' and '" + lhs.paramName.str() +
                             "' of the opposite position");
                     return; // one finding per call site
                 }

@@ -16,12 +16,8 @@ namespace astharbor {
 ///
 /// Also catches the `if (!p)` and `if (p == 0)` spellings. Early-return
 /// guards (`if (!p) return;`) are naturally excluded because the CFG's
-/// then-block has no non-terminator elements in the reachable path.
-///
-/// Implemented as a CFG forward reachability query rooted at the
-/// IfStmt's true-branch successor: BFS forward from element 0 of the
-/// then-block, terminating paths on any reassignment to the checked
-/// variable and reporting the first dereference found.
+/// then-block has no non-terminator elements on the path from the
+/// IfStmt's true-branch successor to the return.
 class UbNullDerefAfterCheckRule : public Rule {
   public:
     std::string id() const override { return "ub/null-deref-after-check"; }
@@ -72,23 +68,12 @@ class UbNullDerefAfterCheckRule : public Rule {
         if (cfg == nullptr) {
             return;
         }
-
-        // Find the CFG block whose terminator is this IfStmt. Its first
-        // successor (succ_begin) is the then-branch — the block entered
-        // when the condition evaluated true, i.e. the pointer is null.
-        const clang::CFGBlock *ifBlock = nullptr;
-        for (const clang::CFGBlock *block : *cfg) {
-            if (block == nullptr) {
-                continue;
-            }
-            if (block->getTerminatorStmt() == IfNode) {
-                ifBlock = block;
-                break;
-            }
-        }
+        const clang::CFGBlock *ifBlock = cfg::locateTerminator(*cfg, IfNode);
         if (ifBlock == nullptr || ifBlock->succ_empty()) {
             return;
         }
+        // CFGBlock::succs() yields [then-block, else-block] for an
+        // if-terminator; the then-block is where the pointer is null.
         const clang::CFGBlock *thenBlock =
             ifBlock->succ_begin()->getReachableBlock();
         if (thenBlock == nullptr) {
@@ -101,8 +86,10 @@ class UbNullDerefAfterCheckRule : public Rule {
                 return cfg::isAssignmentTo(stmt, NullVar);
             },
             [&](const clang::Stmt *stmt) {
-                return findDereference(stmt, NullVar)
-                    .value_or(clang::SourceLocation{});
+                if (const auto *deref = findDereference(stmt, NullVar)) {
+                    return deref->getBeginLoc();
+                }
+                return clang::SourceLocation{};
             });
 
         if (!reportLoc || reportLoc->isInvalid()) {
@@ -115,37 +102,27 @@ class UbNullDerefAfterCheckRule : public Rule {
     }
 
   private:
-    /// Recursively find a dereference of `targetVar` in `stmt`. A
-    /// dereference is:
-    ///   * `p->field` / `p->method()` — MemberExpr with isArrow
-    ///   * `*p`                       — UnaryOperator(UO_Deref)
-    ///   * `p[i]`                     — ArraySubscriptExpr
-    static std::optional<clang::SourceLocation>
-    findDereference(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
-        if (stmt == nullptr) {
-            return std::nullopt;
-        }
-        if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(stmt);
-            member != nullptr && member->isArrow() &&
-            cfg::isDirectRefTo(member->getBase(), targetVar)) {
-            return member->getExprLoc();
-        }
-        if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(stmt);
-            unary != nullptr && unary->getOpcode() == clang::UO_Deref &&
-            cfg::isDirectRefTo(unary->getSubExpr(), targetVar)) {
-            return unary->getExprLoc();
-        }
-        if (const auto *subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(stmt);
-            subscript != nullptr &&
-            cfg::isDirectRefTo(subscript->getBase(), targetVar)) {
-            return subscript->getExprLoc();
-        }
-        for (const clang::Stmt *child : stmt->children()) {
-            if (auto loc = findDereference(child, targetVar)) {
-                return loc;
-            }
-        }
-        return std::nullopt;
+    /// Search `stmt`'s subtree for a dereference of `targetVar` in any
+    /// of these three shapes: `targetVar->field` (arrow member access),
+    /// `*targetVar` (unary deref), or `targetVar[i]` (array subscript).
+    static const clang::Stmt *findDereference(const clang::Stmt *stmt,
+                                                const clang::VarDecl *targetVar) {
+        return cfg::findFirstDescendantIf(
+            stmt, [targetVar](const clang::Stmt *node) {
+                if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(node)) {
+                    return member->isArrow() &&
+                           cfg::isDirectRefTo(member->getBase(), targetVar);
+                }
+                if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(node)) {
+                    return unary->getOpcode() == clang::UO_Deref &&
+                           cfg::isDirectRefTo(unary->getSubExpr(), targetVar);
+                }
+                if (const auto *subscript =
+                        llvm::dyn_cast<clang::ArraySubscriptExpr>(node)) {
+                    return cfg::isDirectRefTo(subscript->getBase(), targetVar);
+                }
+                return false;
+            });
     }
 };
 

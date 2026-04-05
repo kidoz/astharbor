@@ -2,7 +2,6 @@
 #include "astharbor/cfg_reachability.hpp"
 #include "astharbor/rule.hpp"
 #include <clang/AST/ExprCXX.h>
-#include <optional>
 
 namespace astharbor {
 
@@ -25,13 +24,10 @@ namespace astharbor {
 ///     analysis and interprocedural reasoning).
 ///   * Functions containing any `try` block are skipped entirely
 ///     because the throw may be caught locally and not escape, which
-///     would turn into a false positive. The vast majority of bug
-///     sites are in try-less functions where the throw propagates.
-///
-/// Uses the shared CFG forward reachability helper: BFS from the
-/// variable declaration, terminating paths on `delete p` or on
-/// reassignment of `p`, and reporting the first reachable
-/// `CXXThrowExpr`.
+///     would turn into a false positive. The try-block scan is
+///     memoized per function via `cfg::functionHasTryBlock` so the
+///     cost is paid once regardless of how many raw-new'd locals a
+///     function declares.
 class ResourceLeakOnThrowRule : public Rule {
   public:
     std::string id() const override { return "resource/leak-on-throw"; }
@@ -46,12 +42,10 @@ class ResourceLeakOnThrowRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            varDecl(
-                hasLocalStorage(), hasType(pointerType()),
-                hasInitializer(ignoringParenImpCasts(cxxNewExpr())),
-                hasAncestor(functionDecl(isDefinition(),
-                                           unless(hasDescendant(cxxTryStmt())))
-                                 .bind("enclosing_func")))
+            varDecl(hasLocalStorage(), hasType(pointerType()),
+                    hasInitializer(ignoringParenImpCasts(cxxNewExpr())),
+                    hasAncestor(
+                        functionDecl(isDefinition()).bind("enclosing_func")))
                 .bind("owning_var"),
             this);
     }
@@ -64,6 +58,11 @@ class ResourceLeakOnThrowRule : public Rule {
             return;
         }
         if (isInSystemHeader(OwningVar->getLocation(), *Result.SourceManager)) {
+            return;
+        }
+        // Conservative: skip any function containing a `try`, because
+        // the throw might be caught locally and not escape. Memoized.
+        if (cfg::functionHasTryBlock(Func)) {
             return;
         }
 
@@ -83,11 +82,15 @@ class ResourceLeakOnThrowRule : public Rule {
                 // A path becomes clean if it deletes the variable OR
                 // reassigns it (ownership has moved somewhere we can
                 // no longer track locally).
-                return isDeleteOf(stmt, OwningVar) ||
+                return cfg::isDeleteOf(stmt, OwningVar) ||
                        cfg::isAssignmentTo(stmt, OwningVar);
             },
             [&](const clang::Stmt *stmt) {
-                return findThrow(stmt).value_or(clang::SourceLocation{});
+                if (const auto *throwExpr =
+                        cfg::findFirstDescendant<clang::CXXThrowExpr>(stmt)) {
+                    return throwExpr->getThrowLoc();
+                }
+                return clang::SourceLocation{};
             });
 
         if (!reportLoc || reportLoc->isInvalid()) {
@@ -97,33 +100,6 @@ class ResourceLeakOnThrowRule : public Rule {
                     "Pointer '" + OwningVar->getNameAsString() +
                         "' allocated with new is not deleted before this throw "
                         "— use a smart pointer or delete before throwing");
-    }
-
-  private:
-    /// True if `stmt` is `delete targetVar` at the top level. CFG
-    /// decomposes compound statements into their own elements, so a
-    /// shallow check is enough to catch `delete p;` as its own element.
-    static bool isDeleteOf(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
-        const auto *deleteExpr = llvm::dyn_cast<clang::CXXDeleteExpr>(stmt);
-        return deleteExpr != nullptr &&
-               cfg::isDirectRefTo(deleteExpr->getArgument(), targetVar);
-    }
-
-    /// Find a `CXXThrowExpr` anywhere in `stmt`'s subtree.
-    static std::optional<clang::SourceLocation>
-    findThrow(const clang::Stmt *stmt) {
-        if (stmt == nullptr) {
-            return std::nullopt;
-        }
-        if (const auto *throwExpr = llvm::dyn_cast<clang::CXXThrowExpr>(stmt)) {
-            return throwExpr->getThrowLoc();
-        }
-        for (const clang::Stmt *child : stmt->children()) {
-            if (auto loc = findThrow(child)) {
-                return loc;
-            }
-        }
-        return std::nullopt;
     }
 };
 
