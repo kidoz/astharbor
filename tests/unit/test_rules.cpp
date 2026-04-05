@@ -3,9 +3,16 @@
 #include "../../src/rules/bugprone/assignment_in_condition.hpp"
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
+#include "../../src/rules/modernize/use_override.hpp"
+#include "../../src/rules/readability/container_size_empty.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
+#include "../../src/rules/ub/implicit_widening_multiplication.hpp"
 #include "../../src/rules/ub/missing_return_in_non_void.hpp"
+#include "../../src/rules/ub/new_delete_array_mismatch.hpp"
+#include "../../src/rules/ub/noreturn_function_returns.hpp"
+#include "../../src/rules/ub/pointer_arithmetic_on_polymorphic.hpp"
+#include "../../src/rules/ub/reinterpret_cast_type_punning.hpp"
 #include "../../src/rules/ub/shift_by_negative.hpp"
 #include "../../src/rules/ub/shift_past_bitwidth.hpp"
 #include "../../src/rules/ub/static_array_oob_constant.hpp"
@@ -374,4 +381,309 @@ TEST(UbDeleteNonVirtualDtorRuleTest, IgnoresNonPolymorphicClass) {
 
     ASSERT_TRUE(result.success);
     EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── Wave 2 UB rules ───────────────────────────────────────────────────
+
+TEST(UbNewDeleteArrayMismatchRuleTest, DetectsNewArrayScalarDelete) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+        R"cpp(
+            void test() {
+                int *arr = new int[10];
+                delete arr;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/new-delete-array-mismatch");
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().safety, "safe");
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText, "delete[]");
+}
+
+TEST(UbNewDeleteArrayMismatchRuleTest, DetectsNewScalarArrayDelete) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int;
+                delete[] p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+}
+
+TEST(UbNewDeleteArrayMismatchRuleTest, IgnoresMatchedForms) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+        R"cpp(
+            void test() {
+                int *arr = new int[10];
+                delete[] arr;
+                int *p = new int;
+                delete p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbPointerArithmeticOnPolymorphicRuleTest, DetectsIncrement) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbPointerArithmeticOnPolymorphicRule>(),
+        R"cpp(
+            class Base {
+            public:
+                virtual void foo();
+                virtual ~Base();
+            };
+            void test(Base *p) {
+                p++;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_GE(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/pointer-arithmetic-on-polymorphic");
+}
+
+TEST(UbPointerArithmeticOnPolymorphicRuleTest, DetectsSubscript) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbPointerArithmeticOnPolymorphicRule>(),
+        R"cpp(
+            class Base {
+            public:
+                virtual void foo();
+                virtual ~Base();
+            };
+            int test(Base *p) {
+                (void)p[2];
+                return 0;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_GE(result.findings.size(), 1u);
+}
+
+TEST(UbPointerArithmeticOnPolymorphicRuleTest, IgnoresNonPolymorphic) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbPointerArithmeticOnPolymorphicRule>(),
+        R"cpp(
+            struct Plain { int x; };
+            void test(Plain *p) {
+                p++;
+                (void)p[2];
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbImplicitWideningMultiplicationRuleTest, DetectsIntToLongLongWiden) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbImplicitWideningMultiplicationRule>(),
+        R"cpp(
+            long long test(int a, int b) {
+                long long r = a * b;
+                return r;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/implicit-widening-multiplication");
+}
+
+TEST(UbImplicitWideningMultiplicationRuleTest, IgnoresSameWidthMultiplication) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbImplicitWideningMultiplicationRule>(),
+        R"cpp(
+            int test(int a, int b) {
+                int r = a * b;
+                return r;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbImplicitWideningMultiplicationRuleTest, IgnoresPreCastOperand) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbImplicitWideningMultiplicationRule>(),
+        R"cpp(
+            long long test(int a, int b) {
+                long long r = static_cast<long long>(a) * b;
+                return r;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbNoreturnFunctionReturnsRuleTest, DetectsReturnInNoreturnFunction) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
+        R"cpp(
+            [[noreturn]] void fatal() {
+                return;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/noreturn-function-returns");
+}
+
+TEST(UbNoreturnFunctionReturnsRuleTest, IgnoresNormalFunction) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
+        R"cpp(
+            int normal() {
+                return 42;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbReinterpretCastTypePunningRuleTest, DetectsFloatToIntCast) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbReinterpretCastTypePunningRule>(),
+        R"cpp(
+            int test(float *p) {
+                return *reinterpret_cast<int *>(p);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/reinterpret-cast-type-punning");
+}
+
+TEST(UbReinterpretCastTypePunningRuleTest, IgnoresCastToCharPointer) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbReinterpretCastTypePunningRule>(),
+        R"cpp(
+            char *test(int *p) {
+                return reinterpret_cast<char *>(p);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbReinterpretCastTypePunningRuleTest, IgnoresRelatedClassCast) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbReinterpretCastTypePunningRule>(),
+        R"cpp(
+            struct Base { int x; };
+            struct Derived : Base { int y; };
+            Derived *test(Base *p) {
+                return reinterpret_cast<Derived *>(p);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── Autofixes on existing rules ───────────────────────────────────────
+
+TEST(ModernizeUseOverrideRuleTest, ProducesOverrideAutofix) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ModernizeUseOverrideRule>(),
+        R"cpp(
+            class Base {
+            public:
+                virtual void foo();
+                virtual void bar() const;
+                virtual ~Base() {}
+            };
+            class Derived : public Base {
+            public:
+                void foo();
+                void bar() const;
+            };
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 2u);
+    for (const auto &finding : result.findings) {
+        ASSERT_EQ(finding.fixes.size(), 1u);
+        EXPECT_EQ(finding.fixes.front().safety, "safe");
+        EXPECT_EQ(finding.fixes.front().replacementText, " override");
+        EXPECT_EQ(finding.fixes.front().length, 0);
+    }
+}
+
+TEST(ReadabilityContainerSizeEmptyRuleTest, ProducesEmptyAutofixForEq) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ReadabilityContainerSizeEmptyRule>(),
+        R"cpp(
+            struct Container {
+                unsigned size() const { return 0; }
+                bool empty() const { return true; }
+            };
+            void test() {
+                Container c;
+                if (c.size() == 0) {}
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().safety, "safe");
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText, "c.empty()");
+}
+
+TEST(ReadabilityContainerSizeEmptyRuleTest, ProducesNotEmptyAutofixForNe) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ReadabilityContainerSizeEmptyRule>(),
+        R"cpp(
+            struct Container {
+                unsigned size() const { return 0; }
+                bool empty() const { return true; }
+            };
+            void test() {
+                Container c;
+                if (c.size() != 0) {}
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText, "!c.empty()");
+}
+
+TEST(ReadabilityContainerSizeEmptyRuleTest, HandlesReversedOperands) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::ReadabilityContainerSizeEmptyRule>(),
+        R"cpp(
+            struct Container {
+                unsigned size() const { return 0; }
+                bool empty() const { return true; }
+            };
+            void test() {
+                Container c;
+                if (0 < c.size()) {}
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    ASSERT_EQ(result.findings.front().fixes.size(), 1u);
+    EXPECT_EQ(result.findings.front().fixes.front().replacementText, "!c.empty()");
 }

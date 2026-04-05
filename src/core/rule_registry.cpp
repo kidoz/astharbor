@@ -32,6 +32,11 @@
 #include "../rules/ub/shift_past_bitwidth.hpp"
 #include "../rules/ub/static_array_oob_constant.hpp"
 #include "../rules/ub/delete_non_virtual_dtor.hpp"
+#include "../rules/ub/new_delete_array_mismatch.hpp"
+#include "../rules/ub/pointer_arithmetic_on_polymorphic.hpp"
+#include "../rules/ub/implicit_widening_multiplication.hpp"
+#include "../rules/ub/noreturn_function_returns.hpp"
+#include "../rules/ub/reinterpret_cast_type_punning.hpp"
 
 namespace astharbor {
 
@@ -69,6 +74,11 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbShiftPastBitwidthRule>());
     registry.registerRule(std::make_unique<UbStaticArrayOobConstantRule>());
     registry.registerRule(std::make_unique<UbDeleteNonVirtualDtorRule>());
+    registry.registerRule(std::make_unique<UbNewDeleteArrayMismatchRule>());
+    registry.registerRule(std::make_unique<UbPointerArithmeticOnPolymorphicRule>());
+    registry.registerRule(std::make_unique<UbImplicitWideningMultiplicationRule>());
+    registry.registerRule(std::make_unique<UbNoreturnFunctionReturnsRule>());
+    registry.registerRule(std::make_unique<UbReinterpretCastTypePunningRule>());
 }
 
 } // namespace astharbor
