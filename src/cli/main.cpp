@@ -102,6 +102,7 @@ void print_help() {
     std::cout << "  rules               List available rules\n";
     std::cout << "  doctor              Check toolchain health\n";
     std::cout << "  compare <file>      Compare clang vs gcc diagnostics on a file\n";
+    std::cout << "  explain <rule-id>   Show full metadata for a rule\n";
     std::cout << "\nAnalyze options:\n";
     std::cout << "  --checks=PATTERNS   Comma-separated rule-id substrings to enable;\n";
     std::cout << "                      prefix a pattern with '-' to disable matching rules\n";
@@ -722,6 +723,43 @@ int main(int argc, const char **argv) {
                 std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ")
                           << "\n";
             }
+        }
+        return 0;
+    }
+    if (command == "explain") {
+        if (argc < 3) {
+            llvm::errs() << "Usage: astharbor explain <rule-id> [--format=text|json]\n";
+            return 2;
+        }
+        std::string ruleId = argv[2];
+        const Rule *found = nullptr;
+        for (const auto &rule : registry.getRules()) {
+            if (rule->id() == ruleId) {
+                found = rule.get();
+                break;
+            }
+        }
+        if (found == nullptr) {
+            llvm::errs() << "Error: rule '" << ruleId << "' not found. Run `astharbor rules` "
+                         << "to list all rule ids.\n";
+            return 2;
+        }
+        std::string formatValue = extractFormat(argc, argv);
+        if (formatValue == "json") {
+            std::cout << "{\n";
+            std::cout << R"(  "id": ")" << found->id() << "\",\n";
+            std::cout << R"(  "title": ")" << found->title() << "\",\n";
+            std::cout << R"(  "category": ")" << found->category() << "\",\n";
+            std::cout << R"(  "severity": ")" << found->defaultSeverity() << "\",\n";
+            std::cout << R"(  "summary": ")" << found->summary() << "\"\n";
+            std::cout << "}\n";
+        } else {
+            std::cout << found->id() << "\n";
+            std::cout << std::string(found->id().size(), '=') << "\n\n";
+            std::cout << "Title:    " << found->title() << "\n";
+            std::cout << "Category: " << found->category() << "\n";
+            std::cout << "Severity: " << found->defaultSeverity() << "\n\n";
+            std::cout << "Summary:\n  " << found->summary() << "\n";
         }
         return 0;
     }
