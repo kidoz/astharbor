@@ -62,10 +62,18 @@ if get_option('tests')
     'tests/unit/test_rules.cpp'
   ]
 
+  # `-Wno-character-conversion` silences a Catch2 noise warning but
+  # only exists in clang 19+; omit it on older toolchains rather than
+  # failing `-Werror`.
+  test_cpp_args = []
+  if cpp_compiler.has_argument('-Wno-character-conversion')
+    test_cpp_args += '-Wno-character-conversion'
+  endif
+
   test_exe = executable('astharbor_test',
     test_sources,
     dependencies : [astharbor_dep, catch2_dep],
-    cpp_args : ['-Wno-character-conversion']
+    cpp_args : test_cpp_args
   )
   test('unit tests', test_exe)
 endif

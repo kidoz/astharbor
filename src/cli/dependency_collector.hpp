@@ -8,6 +8,7 @@
 #include <clang/Lex/PPCallbacks.h>
 #include <clang/Lex/Preprocessor.h>
 #include <clang/Tooling/Tooling.h>
+#include <llvm/Config/llvm-config.h>
 #include <map>
 #include <memory>
 #include <set>
@@ -28,6 +29,10 @@ class IncludeTrackingCallbacks : public clang::PPCallbacks {
                               std::map<std::string, std::string> &fileAliases)
         : deps(deps), fileAliases(fileAliases) {}
 
+    // LLVM 19 split `const Module *Imported` into `const Module
+    // *SuggestedModule` + `bool ModuleImported`. Both signatures call
+    // the same body via `recordInclude`.
+#if LLVM_VERSION_MAJOR >= 19
     void InclusionDirective(clang::SourceLocation /*HashLoc*/,
                              const clang::Token & /*IncludeTok*/,
                              llvm::StringRef /*FileName*/, bool /*IsAngled*/,
@@ -38,6 +43,24 @@ class IncludeTrackingCallbacks : public clang::PPCallbacks {
                              const clang::Module * /*SuggestedModule*/,
                              bool /*ModuleImported*/,
                              clang::SrcMgr::CharacteristicKind FileType) override {
+        recordInclude(File, FileType);
+    }
+#else
+    void InclusionDirective(clang::SourceLocation /*HashLoc*/,
+                             const clang::Token & /*IncludeTok*/,
+                             llvm::StringRef /*FileName*/, bool /*IsAngled*/,
+                             clang::CharSourceRange /*FilenameRange*/,
+                             clang::OptionalFileEntryRef File,
+                             llvm::StringRef /*SearchPath*/,
+                             llvm::StringRef /*RelativePath*/,
+                             const clang::Module * /*Imported*/,
+                             clang::SrcMgr::CharacteristicKind FileType) override {
+        recordInclude(File, FileType);
+    }
+#endif
+
+    void recordInclude(clang::OptionalFileEntryRef File,
+                        clang::SrcMgr::CharacteristicKind FileType) {
         if (!File) {
             return;
         }
