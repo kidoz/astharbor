@@ -2,6 +2,8 @@
 
 ASTHarbor currently ships local, deterministic AST matcher rules in the same broad families used by `clang-tidy`: `bugprone`, `modernize`, `performance`, `readability`, and `security`.
 
+> **Writing a new rule?** Start with [matcher-cookbook.md](matcher-cookbook.md) — it captures the non-obvious Clang AST matcher idioms (inline-namespace type matching, decayed-array parameters, null `QualType` guards, CFG helpers, etc.) that every rule author eventually runs into.
+
 ## Current Rules
 
 | Rule ID | What it detects | Comparable check |
