@@ -6,6 +6,7 @@
 #include "../../src/rules/bugprone/suspicious_semicolon.hpp"
 #include "../../src/rules/bugprone/swapped_arguments.hpp"
 #include "../../src/rules/bugprone/sizeof_pointer_in_memfunc.hpp"
+#include "../../src/rules/bugprone/char_eof_comparison.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
@@ -1985,6 +1986,93 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofOfOtherVariable")
             void test(T *dst, const T *src) {
                 T record;
                 memcpy(dst, src, sizeof(record));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/char-eof-comparison (CERT FIO34-C) ──────────────────────
+
+TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharInitFromGetchar") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+        R"cpp(
+            extern "C" int getchar();
+            void test() {
+                char c = getchar();
+                (void)c;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/char-eof-comparison");
+}
+
+TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharAssignFromFgetc") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+        R"cpp(
+            struct FILE;
+            extern "C" int fgetc(FILE*);
+            void test(FILE *fp) {
+                char c;
+                c = fgetc(fp);
+                (void)c;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsUnsignedCharInitFromGetc") {
+    // `unsigned char` is where the bug bites hardest — EOF (-1) can
+    // never be represented.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+        R"cpp(
+            struct FILE;
+            extern "C" int getc(FILE*);
+            void test(FILE *fp) {
+                unsigned char c = getc(fp);
+                (void)c;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresIntTarget") {
+    // The correct idiom: store the return in an int so EOF is
+    // preserved.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+        R"cpp(
+            extern "C" int getchar();
+            void test() {
+                int c = getchar();
+                (void)c;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresUnrelatedFunction") {
+    // A function that happens to return int but isn't from the
+    // getchar family is irrelevant.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+        R"cpp(
+            extern "C" int compute();
+            void test() {
+                char c = compute();
+                (void)c;
             }
         )cpp");
 

@@ -5,6 +5,7 @@
 #include "../rules/bugprone/suspicious_semicolon.hpp"
 #include "../rules/bugprone/swapped_arguments.hpp"
 #include "../rules/bugprone/sizeof_pointer_in_memfunc.hpp"
+#include "../rules/bugprone/char_eof_comparison.hpp"
 #include "../rules/bugprone/unsafe_memory_operation.hpp"
 #include "../rules/modernize/use_nullptr.hpp"
 #include "../rules/modernize/use_override.hpp"
@@ -71,6 +72,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<BugproneSuspiciousSemicolonRule>());
     registry.registerRule(std::make_unique<BugproneSwappedArgumentsRule>());
     registry.registerRule(std::make_unique<BugproneSizeofPointerInMemfuncRule>());
+    registry.registerRule(std::make_unique<BugproneCharEofComparisonRule>());
     registry.registerRule(std::make_unique<BugproneUnsafeMemoryOperationRule>());
     registry.registerRule(std::make_unique<SecurityNoGetsRule>());
     registry.registerRule(std::make_unique<SecurityUnsafeTempFileRule>());
