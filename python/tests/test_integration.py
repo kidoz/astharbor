@@ -83,8 +83,9 @@ def test_cpp_fixture_produces_safe_autofixes():
     # Known safe-autofix rules that the fixture should trigger.
     assert "modernize/use-nullptr" in safe_rules
     assert "modernize/use-override" in safe_rules
-    assert "readability/use-using-alias" in safe_rules
     assert "ub/new-delete-array-mismatch" in safe_rules
+    # use-using-alias produces a `review`-level fix because QualType::getAsString
+    # is not guaranteed to round-trip through the parser.
 
 
 # ── C fixture ──────────────────────────────────────────────────────────
@@ -138,6 +139,52 @@ def test_fix_apply_rewrites_cpp_fixture(tmp_path):
     # Original NULL usage should have been replaced (the macro define stays,
     # but the cast site no longer uses the macro expansion).
     assert "int *pointer = nullptr" in text
+
+
+def test_checks_pattern_filters_rules(tmp_path):
+    """--checks should restrict which rules produce findings at analyze time."""
+    source = tmp_path / "main.cpp"
+    shutil.copy(os.path.join(CPP_FIXTURE, "main.cpp"), source)
+    executable = cli_bridge.get_astharbor_path()
+
+    all_rules = subprocess.run(
+        [executable, "analyze", str(source), "--format=json", "--"],
+        capture_output=True,
+        text=True,
+    )
+    full = json.loads(all_rules.stdout)
+
+    only_modernize = subprocess.run(
+        [executable, "analyze", str(source), "--checks=modernize", "--format=json", "--"],
+        capture_output=True,
+        text=True,
+    )
+    filtered = json.loads(only_modernize.stdout)
+
+    full_rule_set = {f["ruleId"] for f in full["findings"]}
+    filtered_rule_set = {f["ruleId"] for f in filtered["findings"]}
+
+    assert "modernize/use-nullptr" in filtered_rule_set
+    assert len(filtered_rule_set) < len(full_rule_set)
+    # Non-modernize rules should be suppressed.
+    assert all("modernize" in r for r in filtered_rule_set)
+
+
+def test_checks_negative_pattern_excludes_rules(tmp_path):
+    source = tmp_path / "main.cpp"
+    shutil.copy(os.path.join(CPP_FIXTURE, "main.cpp"), source)
+    executable = cli_bridge.get_astharbor_path()
+
+    result = subprocess.run(
+        [executable, "analyze", str(source), "--checks=-ub", "--format=json", "--"],
+        capture_output=True,
+        text=True,
+    )
+    data = json.loads(result.stdout)
+    rules = {f["ruleId"] for f in data["findings"]}
+    assert not any(r.startswith("ub/") for r in rules)
+    # Other categories should still appear.
+    assert "modernize/use-nullptr" in rules
 
 
 def test_save_run_and_load_via_run_id(tmp_path):

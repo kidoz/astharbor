@@ -1,5 +1,3 @@
-#include <cstdio>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -54,6 +52,13 @@ static llvm::cl::opt<std::string>
               llvm::cl::desc("Restrict fix to a single finding id from the loaded run"),
               llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
+static llvm::cl::opt<std::string>
+    Checks("checks",
+           llvm::cl::desc("Comma-separated substring patterns; only rules whose id "
+                          "contains any pattern are enabled. Prefix a pattern with "
+                          "'-' to disable matching rules instead."),
+           llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+
 void print_help() {
     std::cout << "ASTHarbor CLI\n";
     std::cout << "Commands:\n";
@@ -62,6 +67,8 @@ void print_help() {
     std::cout << "  rules               List available rules\n";
     std::cout << "  doctor              Check toolchain health\n";
     std::cout << "\nAnalyze options:\n";
+    std::cout << "  --checks=PATTERNS   Comma-separated rule-id substrings to enable;\n";
+    std::cout << "                      prefix a pattern with '-' to disable matching rules\n";
     std::cout << "  --save-run[=PATH]   Persist result to ~/.astharbor/runs/<runId>.json or\n";
     std::cout << "                      to PATH for later `fix --run-id`\n";
     std::cout << "\nFix options:\n";
@@ -73,6 +80,58 @@ void print_help() {
     std::cout << "  --backup            Create .bak backup files before modifying\n";
     std::cout << "\nCommon options:\n";
     std::cout << "  --format=FORMAT     Output format: text, json, sarif\n";
+}
+
+/// Parse a `--checks` pattern string into (positive, negative) substring lists.
+/// Patterns are comma-separated; a leading '-' marks a negative pattern.
+static std::pair<std::vector<std::string>, std::vector<std::string>>
+parseChecksPattern(const std::string &input) {
+    std::vector<std::string> positive;
+    std::vector<std::string> negative;
+    size_t start = 0;
+    while (start <= input.size()) {
+        size_t comma = input.find(',', start);
+        std::string token = input.substr(start, comma == std::string::npos
+                                                    ? std::string::npos
+                                                    : comma - start);
+        if (!token.empty()) {
+            if (token.front() == '-') {
+                if (token.size() > 1) {
+                    negative.push_back(token.substr(1));
+                }
+            } else {
+                positive.push_back(std::move(token));
+            }
+        }
+        if (comma == std::string::npos) {
+            break;
+        }
+        start = comma + 1;
+    }
+    return {std::move(positive), std::move(negative)};
+}
+
+/// Return true if the rule with the given id should be enabled given the
+/// parsed --checks patterns.
+static bool ruleIsEnabled(const std::string &ruleId,
+                          const std::vector<std::string> &positive,
+                          const std::vector<std::string> &negative) {
+    bool enabled = positive.empty(); // start all-on iff no positive patterns
+    for (const auto &pattern : positive) {
+        if (ruleId.find(pattern) != std::string::npos) {
+            enabled = true;
+            break;
+        }
+    }
+    if (!enabled) {
+        return false;
+    }
+    for (const auto &pattern : negative) {
+        if (ruleId.find(pattern) != std::string::npos) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
@@ -112,9 +171,19 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
 
     ClangTool tool(compilationDb, sourcePaths);
 
+    // Build the active rule set honouring --checks. Rules outside the set
+    // are neither registered nor polled for findings, so the matcher engine
+    // skips their work entirely.
+    auto [positivePatterns, negativePatterns] = parseChecksPattern(Checks.getValue());
+    std::vector<const Rule *> activeRules;
+    activeRules.reserve(registry.getRules().size());
     clang::ast_matchers::MatchFinder finder;
     for (const auto &rule : registry.getRules()) {
+        if (!ruleIsEnabled(rule->id(), positivePatterns, negativePatterns)) {
+            continue;
+        }
         rule->registerMatchers(finder);
+        activeRules.push_back(rule.get());
     }
 
     int toolExitCode = tool.run(newFrontendActionFactory(&finder).get());
@@ -122,16 +191,11 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     AnalysisResult result;
     result.runId = generateRunId();
     result.success = (toolExitCode == 0);
-    for (const auto &rule : registry.getRules()) {
+    for (const Rule *rule : activeRules) {
         auto ruleFindings = rule->getFindings();
         result.findings.insert(result.findings.end(), ruleFindings.begin(), ruleFindings.end());
     }
-    // Assign stable sequential findingIds.
-    for (size_t index = 0; index < result.findings.size(); ++index) {
-        char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "finding-%04zu", index);
-        result.findings[index].findingId = buffer;
-    }
+    assignFindingIds(result);
 
     int exitCode = (toolExitCode != 0) ? 2 : (result.findings.empty() ? 0 : 1);
     return {std::move(result), exitCode};
@@ -214,7 +278,6 @@ int main(int argc, const char **argv) {
         }
 
         AnalysisResult result;
-        int exitCode = 0;
 
         // Two modes: load a previously saved run via --run-id, or re-run the
         // analysis on the given sources.
@@ -230,7 +293,6 @@ int main(int argc, const char **argv) {
         } else {
             auto analysis = runAnalysis(*parser, registry);
             result = std::move(analysis.first);
-            exitCode = analysis.second;
         }
 
         // Filter findings to only those with fixes (and optional rule /
@@ -250,7 +312,6 @@ int main(int argc, const char **argv) {
             }
             fixableFindings.push_back(finding);
         }
-        (void)exitCode;
 
         if (fixableFindings.empty()) {
             std::cout << "No fixes available.\n";
