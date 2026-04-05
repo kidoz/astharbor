@@ -1205,3 +1205,46 @@ TEST(UbUninitializedLocalRuleTest, IgnoresAddressOfFollowedByRead) {
     ASSERT_TRUE(result.success);
     EXPECT_TRUE(result.findings.empty());
 }
+
+TEST(UbUninitializedLocalRuleTest, DetectsReadOnBranchMissingInit) {
+    // One branch writes x, the other does not; the read after the
+    // merge is reachable from the unwritten path, so this is a real
+    // uninitialized read. The old source-order walker considered the
+    // single write sufficient and missed this.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            int test(bool flag) {
+                int x;
+                if (flag) {
+                    x = 42;
+                }
+                return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_FALSE(result.findings.empty());
+    EXPECT_EQ(result.findings.front().ruleId, "ub/uninitialized-local");
+}
+
+TEST(UbUninitializedLocalRuleTest, IgnoresWriteInAllBranches) {
+    // Both branches write x, so every path to the read has a prior
+    // write — no finding.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUninitializedLocalRule>(),
+        R"cpp(
+            int test(bool flag) {
+                int x;
+                if (flag) {
+                    x = 1;
+                } else {
+                    x = 2;
+                }
+                return x + 1;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
