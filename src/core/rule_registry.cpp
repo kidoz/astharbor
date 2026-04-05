@@ -41,6 +41,10 @@
 #include "../rules/portability/vla_in_cxx.hpp"
 #include "../rules/best_practice/no_raw_new_delete.hpp"
 #include "../rules/best_practice/explicit_single_arg_ctor.hpp"
+#include "../rules/ub/c_style_cast_pointer_punning.hpp"
+#include "../rules/ub/casting_through_void.hpp"
+#include "../rules/ub/move_of_const.hpp"
+#include "../rules/ub/sizeof_array_parameter.hpp"
 
 namespace astharbor {
 
@@ -87,6 +91,10 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<PortabilityVlaInCxxRule>());
     registry.registerRule(std::make_unique<BestPracticeNoRawNewDeleteRule>());
     registry.registerRule(std::make_unique<BestPracticeExplicitSingleArgCtorRule>());
+    registry.registerRule(std::make_unique<UbCStyleCastPointerPunningRule>());
+    registry.registerRule(std::make_unique<UbCastingThroughVoidRule>());
+    registry.registerRule(std::make_unique<UbMoveOfConstRule>());
+    registry.registerRule(std::make_unique<UbSizeofArrayParameterRule>());
 }
 
 } // namespace astharbor

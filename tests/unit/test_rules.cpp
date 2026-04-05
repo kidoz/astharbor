@@ -9,6 +9,10 @@
 #include "../../src/rules/portability/vla_in_cxx.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
 #include "../../src/rules/readability/use_using_alias.hpp"
+#include "../../src/rules/ub/c_style_cast_pointer_punning.hpp"
+#include "../../src/rules/ub/casting_through_void.hpp"
+#include "../../src/rules/ub/move_of_const.hpp"
+#include "../../src/rules/ub/sizeof_array_parameter.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
 #include "../../src/rules/ub/implicit_widening_multiplication.hpp"
@@ -705,7 +709,7 @@ TEST(ReadabilityUseUsingAliasRuleTest, DetectsSimpleTypedef) {
     ASSERT_EQ(result.findings.size(), 1u);
     EXPECT_EQ(result.findings.front().ruleId, "readability/use-using-alias");
     ASSERT_EQ(result.findings.front().fixes.size(), 1u);
-    EXPECT_EQ(result.findings.front().fixes.front().safety, "safe");
+    EXPECT_EQ(result.findings.front().fixes.front().safety, "review");
     EXPECT_EQ(result.findings.front().fixes.front().replacementText,
               "using MyInt = int");
 }
@@ -824,6 +828,130 @@ TEST(BestPracticeExplicitSingleArgCtorRuleTest, IgnoresCopyConstructor) {
               public:
                 Widget(const Widget &other);
             };
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+// ─── Wave 3 UB rules ───────────────────────────────────────────────────
+
+TEST(UbCStyleCastPointerPunningRuleTest, DetectsFloatToIntPunning) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbCStyleCastPointerPunningRule>(),
+        R"cpp(
+            int test(float *p) {
+                return *(int *)p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/c-style-cast-pointer-punning");
+}
+
+TEST(UbCStyleCastPointerPunningRuleTest, IgnoresCastToChar) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbCStyleCastPointerPunningRule>(),
+        R"cpp(
+            char *test(int *p) {
+                return (char *)p;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbCastingThroughVoidRuleTest, DetectsStaticCastChain) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbCastingThroughVoidRule>(),
+        R"cpp(
+            int test(float *p) {
+                return *static_cast<int *>(static_cast<void *>(p));
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_GE(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/casting-through-void");
+}
+
+TEST(UbCastingThroughVoidRuleTest, IgnoresSingleStaticCast) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbCastingThroughVoidRule>(),
+        R"cpp(
+            void *test(int *p) {
+                return static_cast<void *>(p);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbMoveOfConstRuleTest, DetectsMoveOfConstLvalue) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbMoveOfConstRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+                template <typename T> T&& move(const T& t);
+            }
+            struct Item { int x; };
+            void test() {
+                const Item a{1};
+                Item b(std::move(a));
+                (void)b;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/move-of-const");
+}
+
+TEST(UbMoveOfConstRuleTest, IgnoresMoveOfNonConstLvalue) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbMoveOfConstRule>(),
+        R"cpp(
+            namespace std {
+                template <typename T> T&& move(T& t);
+            }
+            struct Item { int x; };
+            void test() {
+                Item a{1};
+                Item b(std::move(a));
+                (void)b;
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.findings.empty());
+}
+
+TEST(UbSizeofArrayParameterRuleTest, DetectsSizeofArrayParam) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
+        R"cpp(
+            unsigned long test(int arr[100]) {
+                return sizeof(arr);
+            }
+        )cpp");
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.findings.size(), 1u);
+    EXPECT_EQ(result.findings.front().ruleId, "ub/sizeof-array-parameter");
+}
+
+TEST(UbSizeofArrayParameterRuleTest, IgnoresSizeofLocalArray) {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
+        R"cpp(
+            unsigned long test() {
+                int arr[100];
+                return sizeof(arr);
+            }
         )cpp");
 
     ASSERT_TRUE(result.success);
