@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 astharbor-mcp = "astharbor_mcp.server:main"
+astharbor-lsp = "astharbor_mcp.lsp:main"
 
 [dependency-groups]
 dev = [
