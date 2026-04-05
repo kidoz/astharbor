@@ -147,20 +147,21 @@ def test_initialize_advertises_code_action_provider():
 
 
 def test_byte_offset_to_position_ascii():
-    text = "line0\nline1\nline2\n"
-    # Offset 0 is at the start of line 0.
-    assert lsp._byte_offset_to_position(text, 0) == {"line": 0, "character": 0}
+    encoded, line_starts = lsp._build_line_index("line0\nline1\nline2\n")
+    assert lsp._byte_offset_to_position(encoded, line_starts, 0) == \
+        {"line": 0, "character": 0}
     # Offset 6 is right after the first newline → start of line 1.
-    assert lsp._byte_offset_to_position(text, 6) == {"line": 1, "character": 0}
-    # Mid-line offsets.
-    assert lsp._byte_offset_to_position(text, 9) == {"line": 1, "character": 3}
+    assert lsp._byte_offset_to_position(encoded, line_starts, 6) == \
+        {"line": 1, "character": 0}
+    assert lsp._byte_offset_to_position(encoded, line_starts, 9) == \
+        {"line": 1, "character": 3}
 
 
 def test_byte_offset_to_position_non_ascii():
     # "αβγ" is 3 UTF-16 code units but 6 UTF-8 bytes.
-    text = "αβγX\n"
+    encoded, line_starts = lsp._build_line_index("αβγX\n")
     # Offset 6 is right before the 'X' (after 3 two-byte chars).
-    position = lsp._byte_offset_to_position(text, 6)
+    position = lsp._byte_offset_to_position(encoded, line_starts, 6)
     assert position == {"line": 0, "character": 3}
 
 

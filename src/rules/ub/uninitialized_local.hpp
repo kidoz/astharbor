@@ -1,8 +1,7 @@
 #pragma once
+#include "astharbor/cfg_reachability.hpp"
 #include "astharbor/rule.hpp"
-#include <clang/Analysis/CFG.h>
-#include <deque>
-#include <unordered_set>
+#include <optional>
 
 namespace astharbor {
 
@@ -11,14 +10,11 @@ namespace astharbor {
 /// ASTHarbor pipeline so findings flow through SARIF, fix command
 /// plumbing, and the MCP server uniformly.
 ///
-/// Uses a forward reachability analysis on the function's `clang::CFG`.
-/// Starting from the CFG block that contains the `VarDecl`, we BFS over
-/// successor blocks looking for the first read of the variable on any
-/// path that has not been written yet. Paths that assign to the variable
-/// (including address-of, which hands a write capability to callees) are
-/// terminated before they can report a read. This is strictly better
-/// than the previous source-order walker, which would miss reads in
-/// branches that were reachable only via an unwritten path.
+/// Implemented as a CFG forward reachability query: BFS forward from
+/// the variable's declaration, treating assignments and address-of
+/// operations as path terminators (the latter because a callee may
+/// initialize through the pointer) and the first surviving read as the
+/// diagnostic.
 class UbUninitializedLocalRule : public Rule {
   public:
     std::string id() const override { return "ub/uninitialized-local"; }
@@ -48,13 +44,13 @@ class UbUninitializedLocalRule : public Rule {
             Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
-        // Skip static and thread-local locals — they are zero-initialized.
+        // Static and thread-local locals are zero-initialized; record
+        // types may have default constructors; arrays are initialized
+        // elsewhere. None of these are in scope for this rule.
         if (UninitVar->isStaticLocal() ||
             UninitVar->getTLSKind() != clang::VarDecl::TLS_None) {
             return;
         }
-        // Skip records and arrays — record types may have default constructors
-        // and array initialization is handled elsewhere.
         clang::QualType type = UninitVar->getType();
         if (type->isRecordType() || type->isArrayType()) {
             return;
@@ -69,147 +65,46 @@ class UbUninitializedLocalRule : public Rule {
             return;
         }
 
-        // Locate the CFG block and element index of the VarDecl statement.
-        const clang::CFGBlock *declBlock = nullptr;
-        size_t declIndex = 0;
-        for (const clang::CFGBlock *block : *cfg) {
-            if (block == nullptr) {
-                continue;
-            }
-            for (size_t elementIndex = 0; elementIndex < block->size(); ++elementIndex) {
-                auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
-                if (!cfgStmt) {
-                    continue;
-                }
-                if (containsDeclOf(cfgStmt->getStmt(), UninitVar)) {
-                    declBlock = block;
-                    declIndex = elementIndex;
-                    break;
-                }
-            }
-            if (declBlock != nullptr) {
-                break;
-            }
-        }
-        if (declBlock == nullptr) {
+        auto start = cfg::locateDecl(*cfg, UninitVar);
+        if (!start) {
             return;
         }
 
-        // Forward BFS from the point just after the declaration. The first
-        // read reached on a path that has not yet written to the variable
-        // is the diagnostic. Writes (assignments or address-of) terminate
-        // their path.
-        std::unordered_set<const clang::CFGBlock *> visited;
-        std::deque<std::pair<const clang::CFGBlock *, size_t>> work;
-        work.emplace_back(declBlock, declIndex + 1);
-        visited.insert(declBlock);
+        auto reportLoc = cfg::forwardReachable(
+            start->first, start->second,
+            [&](const clang::Stmt *stmt) {
+                return containsWriteTo(stmt, UninitVar);
+            },
+            [&](const clang::Stmt *stmt) {
+                return findRead(stmt, UninitVar).value_or(clang::SourceLocation{});
+            });
 
-        clang::SourceLocation reportLoc;
-
-        while (!work.empty() && reportLoc.isInvalid()) {
-            auto [block, startIndex] = work.front();
-            work.pop_front();
-
-            bool stopThisPath = false;
-            for (size_t elementIndex = startIndex;
-                 elementIndex < block->size() && !stopThisPath;
-                 ++elementIndex) {
-                auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
-                if (!cfgStmt) {
-                    continue;
-                }
-                const clang::Stmt *statement = cfgStmt->getStmt();
-                if (statement == nullptr) {
-                    continue;
-                }
-                // If the statement performs any write to the variable
-                // (assignment, overloaded operator=, or address-of that
-                // hands write capability to a callee), the path becomes
-                // "fresh" and we stop exploring. Otherwise look for a
-                // read — the first one reached on this path is the
-                // diagnostic.
-                if (containsWriteTo(statement, UninitVar)) {
-                    stopThisPath = true;
-                    break;
-                }
-                if (auto readLoc = findRead(statement, UninitVar)) {
-                    reportLoc = *readLoc;
-                    break;
-                }
-            }
-
-            if (reportLoc.isValid()) {
-                break;
-            }
-            if (stopThisPath) {
-                continue;
-            }
-
-            for (auto successor : block->succs()) {
-                const clang::CFGBlock *nextBlock = successor.getReachableBlock();
-                if (nextBlock == nullptr || visited.count(nextBlock) > 0) {
-                    continue;
-                }
-                visited.insert(nextBlock);
-                work.emplace_back(nextBlock, 0);
-            }
-        }
-
-        if (reportLoc.isInvalid()) {
+        if (!reportLoc || reportLoc->isInvalid()) {
             return;
         }
-
-        emitFinding(reportLoc, *Result.SourceManager,
+        emitFinding(*reportLoc, *Result.SourceManager,
                     "Local '" + UninitVar->getNameAsString() +
                         "' is read before any write — reading an indeterminate value is "
                         "undefined behavior");
     }
 
   private:
-    /// Return true if `stmt` is or contains a `DeclStmt` that declares
-    /// `targetVar`. Used to find the CFG element owning the declaration.
-    static bool containsDeclOf(const clang::Stmt *stmt,
-                                const clang::VarDecl *targetVar) {
-        if (stmt == nullptr) {
-            return false;
-        }
-        if (const auto *declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
-            for (const clang::Decl *decl : declStmt->decls()) {
-                if (decl == targetVar) {
-                    return true;
-                }
-            }
-        }
-        for (const clang::Stmt *child : stmt->children()) {
-            if (containsDeclOf(child, targetVar)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Return true if `stmt` recursively contains any write to `targetVar`:
-    /// an assignment `x = ...`, an overloaded `operator=` whose LHS is
-    /// `x`, or a unary `&x` (the address escapes, so a callee may init
-    /// the variable).
+    /// Return true if `stmt` recursively contains a write to `targetVar`:
+    /// an assignment, an overloaded `operator=`, or a `&targetVar`. The
+    /// address-of case is treated as a write because once a callee holds
+    /// the pointer, we can no longer reason locally about whether the
+    /// variable has been initialized.
     static bool containsWriteTo(const clang::Stmt *stmt,
                                  const clang::VarDecl *targetVar) {
         if (stmt == nullptr) {
             return false;
         }
-        if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(stmt);
-            binary != nullptr && binary->isAssignmentOp() &&
-            isDirectRefTo(binary->getLHS(), targetVar)) {
+        if (cfg::isAssignmentTo(stmt, targetVar)) {
             return true;
         }
         if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(stmt);
             unary != nullptr && unary->getOpcode() == clang::UO_AddrOf &&
-            isDirectRefTo(unary->getSubExpr(), targetVar)) {
-            return true;
-        }
-        if (const auto *op = llvm::dyn_cast<clang::CXXOperatorCallExpr>(stmt);
-            op != nullptr && op->getOperator() == clang::OO_Equal &&
-            op->getNumArgs() == 2 && isDirectRefTo(op->getArg(0), targetVar)) {
+            cfg::isDirectRefTo(unary->getSubExpr(), targetVar)) {
             return true;
         }
         for (const clang::Stmt *child : stmt->children()) {
@@ -220,20 +115,18 @@ class UbUninitializedLocalRule : public Rule {
         return false;
     }
 
-    /// Walk `stmt` looking for a read of `targetVar` — any `DeclRefExpr`
-    /// to the variable that is not the LHS of an assignment to it.
-    /// Address-of operands are not skipped here because the enclosing
-    /// statement is already classified as a write via `containsWriteTo`
-    /// and never reaches this function.
+    /// Walk `stmt` looking for a `DeclRefExpr` to `targetVar` that is not
+    /// the LHS of an assignment to it. The enclosing BFS has already
+    /// filtered out statements containing any write to the variable, so
+    /// a surviving DeclRefExpr on this path is a read before any write.
     static std::optional<clang::SourceLocation>
     findRead(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
         if (stmt == nullptr) {
             return std::nullopt;
         }
-        // Skip LHS of an assignment to the target, but still check the RHS.
         if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(stmt);
             binary != nullptr && binary->isAssignmentOp() &&
-            isDirectRefTo(binary->getLHS(), targetVar)) {
+            cfg::isDirectRefTo(binary->getLHS(), targetVar)) {
             return findRead(binary->getRHS(), targetVar);
         }
         if (const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(stmt);
@@ -246,16 +139,6 @@ class UbUninitializedLocalRule : public Rule {
             }
         }
         return std::nullopt;
-    }
-
-    static bool isDirectRefTo(const clang::Expr *expr,
-                               const clang::VarDecl *targetVar) {
-        if (expr == nullptr) {
-            return false;
-        }
-        const auto *ref =
-            llvm::dyn_cast<clang::DeclRefExpr>(expr->IgnoreParenImpCasts());
-        return ref != nullptr && ref->getDecl() == targetVar;
     }
 };
 

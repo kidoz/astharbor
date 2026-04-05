@@ -1,9 +1,8 @@
 #pragma once
+#include "astharbor/cfg_reachability.hpp"
 #include "astharbor/rule.hpp"
 #include <clang/AST/ExprCXX.h>
-#include <clang/Analysis/CFG.h>
-#include <deque>
-#include <unordered_set>
+#include <optional>
 
 namespace astharbor {
 
@@ -13,14 +12,10 @@ namespace astharbor {
 /// so reusing the same pointer for a second delete is undefined behavior
 /// (and typically crashes).
 ///
-/// Uses a forward reachability analysis on the function's `clang::CFG`.
-/// Starting from the CFG block that contains the first `delete p` call,
-/// we BFS over successor blocks and look for a second `delete p` on any
-/// reachable path. Paths that reassign `p` are terminated (the pointer is
-/// fresh again). Paths that never reach a second delete (e.g., early
-/// return, throw) are correctly excluded — a significant improvement over
-/// the previous source-order walker which reported branches that can
-/// never execute together.
+/// Implemented as a CFG forward reachability query: BFS forward from
+/// the block containing the first delete, treating reassignments as
+/// path terminators and a second delete of the same variable on any
+/// reachable path as the diagnostic.
 class UbDoubleFreeLocalRule : public Rule {
   public:
     std::string id() const override { return "ub/double-free-local"; }
@@ -58,148 +53,39 @@ class UbDoubleFreeLocalRule : public Rule {
             return;
         }
 
-        // Build the CFG for the enclosing function body.
         clang::CFG::BuildOptions options;
         auto cfg = clang::CFG::buildCFG(Func, Func->getBody(), Result.Context, options);
         if (!cfg) {
             return;
         }
 
-        // Locate the CFG block and element index of the first delete.
-        const clang::CFGBlock *deleteBlock = nullptr;
-        size_t deleteIndex = 0;
-        for (const clang::CFGBlock *block : *cfg) {
-            if (block == nullptr) {
-                continue;
-            }
-            for (size_t elementIndex = 0; elementIndex < block->size(); ++elementIndex) {
-                auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
-                if (!cfgStmt) {
-                    continue;
-                }
-                if (containsStmt(cfgStmt->getStmt(), FirstDelete)) {
-                    deleteBlock = block;
-                    deleteIndex = elementIndex;
-                    break;
-                }
-            }
-            if (deleteBlock != nullptr) {
-                break;
-            }
-        }
-        if (deleteBlock == nullptr) {
+        auto start = cfg::locateStmt(*cfg, FirstDelete);
+        if (!start) {
             return;
         }
 
-        // Forward BFS from the point just after the first delete. For each
-        // reached block we scan its statements in order and stop on
-        // reassignment. A matching second delete on any reachable path is
-        // a diagnostic.
-        std::unordered_set<const clang::CFGBlock *> visited;
-        std::deque<std::pair<const clang::CFGBlock *, size_t>> work;
-        work.emplace_back(deleteBlock, deleteIndex + 1);
-        visited.insert(deleteBlock);
+        auto reportLoc = cfg::forwardReachable(
+            start->first, start->second,
+            [&](const clang::Stmt *stmt) {
+                return cfg::isAssignmentTo(stmt, DeletedVar);
+            },
+            [&](const clang::Stmt *stmt) {
+                return findSecondDeleteLocation(stmt, DeletedVar, FirstDelete)
+                    .value_or(clang::SourceLocation{});
+            });
 
-        clang::SourceLocation reportLoc;
-
-        while (!work.empty() && reportLoc.isInvalid()) {
-            auto [block, startIndex] = work.front();
-            work.pop_front();
-
-            bool stopThisPath = false;
-            for (size_t elementIndex = startIndex;
-                 elementIndex < block->size() && !stopThisPath;
-                 ++elementIndex) {
-                auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
-                if (!cfgStmt) {
-                    continue;
-                }
-                const clang::Stmt *statement = cfgStmt->getStmt();
-                if (statement == nullptr) {
-                    continue;
-                }
-                if (isReassignmentOf(statement, DeletedVar)) {
-                    stopThisPath = true;
-                    break;
-                }
-                if (auto secondLoc =
-                        findSecondDeleteLocation(statement, DeletedVar, FirstDelete)) {
-                    reportLoc = *secondLoc;
-                    break;
-                }
-            }
-
-            if (reportLoc.isValid()) {
-                break;
-            }
-            if (stopThisPath) {
-                continue;
-            }
-
-            for (auto successor : block->succs()) {
-                const clang::CFGBlock *nextBlock = successor.getReachableBlock();
-                if (nextBlock == nullptr || visited.count(nextBlock) > 0) {
-                    continue;
-                }
-                visited.insert(nextBlock);
-                work.emplace_back(nextBlock, 0);
-            }
-        }
-
-        if (reportLoc.isInvalid()) {
+        if (!reportLoc || reportLoc->isInvalid()) {
             return;
         }
-
-        emitFinding(reportLoc, *Result.SourceManager,
+        emitFinding(*reportLoc, *Result.SourceManager,
                     "Pointer '" + DeletedVar->getNameAsString() +
                         "' is deleted twice within this function without an intervening "
                         "reassignment — undefined behavior");
     }
 
   private:
-    /// Return true if `haystack` is or contains `needle` as a sub-expression.
-    static bool containsStmt(const clang::Stmt *haystack, const clang::Stmt *needle) {
-        if (haystack == nullptr || needle == nullptr) {
-            return false;
-        }
-        if (haystack == needle) {
-            return true;
-        }
-        for (const clang::Stmt *child : haystack->children()) {
-            if (containsStmt(child, needle)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Return true if `stmt` is a reassignment to `targetVar` — either a
-    /// plain `BinaryOperator` assignment or an overloaded `operator=` call.
-    static bool isReassignmentOf(const clang::Stmt *stmt,
-                                  const clang::VarDecl *targetVar) {
-        if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(stmt)) {
-            if (binary->isAssignmentOp()) {
-                const auto *lhs = binary->getLHS()->IgnoreParenImpCasts();
-                if (const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(lhs)) {
-                    return ref->getDecl() == targetVar;
-                }
-            }
-            return false;
-        }
-        if (const auto *op = llvm::dyn_cast<clang::CXXOperatorCallExpr>(stmt)) {
-            if (op->getOperator() == clang::OO_Equal && op->getNumArgs() == 2) {
-                const auto *lhs = op->getArg(0)->IgnoreParenImpCasts();
-                if (const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(lhs)) {
-                    return ref->getDecl() == targetVar;
-                }
-            }
-        }
-        return false;
-    }
-
-    /// Recursively look for a `CXXDeleteExpr` operating on `targetVar` that
-    /// is not `excludedDelete` (the first delete itself). Returns the
-    /// location of the delete expression if found.
+    /// Recursively look for a `CXXDeleteExpr` operating on `targetVar`
+    /// that is not `excludedDelete` (the first delete itself).
     static std::optional<clang::SourceLocation>
     findSecondDeleteLocation(const clang::Stmt *stmt, const clang::VarDecl *targetVar,
                              const clang::CXXDeleteExpr *excludedDelete) {
@@ -207,9 +93,7 @@ class UbDoubleFreeLocalRule : public Rule {
             return std::nullopt;
         }
         if (const auto *deleteExpr = llvm::dyn_cast<clang::CXXDeleteExpr>(stmt)) {
-            const auto *arg = deleteExpr->getArgument()->IgnoreParenImpCasts();
-            if (const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(arg);
-                ref != nullptr && ref->getDecl() == targetVar) {
+            if (cfg::isDirectRefTo(deleteExpr->getArgument(), targetVar)) {
                 return deleteExpr->getExprLoc();
             }
         }

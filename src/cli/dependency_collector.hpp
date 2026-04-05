@@ -44,9 +44,7 @@ class IncludeTrackingCallbacks : public clang::PPCallbacks {
         if (path.empty()) {
             path = File->getName().str();
         }
-        if (!path.empty()) {
-            deps.insert(std::move(path));
-        }
+        deps.insert(std::move(path));
     }
 
   private:

@@ -1101,9 +1101,8 @@ TEST(UbDoubleFreeLocalRuleTest, IgnoresSingleDelete) {
 }
 
 TEST(UbDoubleFreeLocalRuleTest, IgnoresDeleteInBranchWithEarlyReturn) {
-    // With CFG reachability the second delete is unreachable from the
-    // first because the `return` cuts the path. The source-order walker
-    // reported this as a false positive; the CFG-based analysis does not.
+    // The `return` cuts the path from the first delete to the second,
+    // so no reachable path double-frees `p`.
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
         R"cpp(
@@ -1209,8 +1208,7 @@ TEST(UbUninitializedLocalRuleTest, IgnoresAddressOfFollowedByRead) {
 TEST(UbUninitializedLocalRuleTest, DetectsReadOnBranchMissingInit) {
     // One branch writes x, the other does not; the read after the
     // merge is reachable from the unwritten path, so this is a real
-    // uninitialized read. The old source-order walker considered the
-    // single write sufficient and missed this.
+    // uninitialized read.
     const auto result = astharbor::test::runRuleOnCode(
         std::make_unique<astharbor::UbUninitializedLocalRule>(),
         R"cpp(
