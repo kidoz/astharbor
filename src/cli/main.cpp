@@ -722,8 +722,11 @@ int main(int argc, const char **argv) {
             (Apply.getValue() || AllSafe.getValue()) && !DryRun.getValue();
         if (shouldApply) {
             // Snapshot originals before applying so --verify can roll back on
-            // a post-apply syntax failure.
+            // a post-apply syntax failure. Also remember which files were
+            // already broken before we touched them — we must not roll those
+            // back if they remain broken after the apply (no regression).
             std::map<std::string, std::string> originalContents;
+            std::set<std::string> alreadyBroken;
             if (Verify.getValue()) {
                 std::set<std::string> targetFiles;
                 for (const auto &finding : fixableFindings) {
@@ -735,17 +738,25 @@ int main(int argc, const char **argv) {
                     if (auto content = readFileContent(path)) {
                         originalContents.emplace(path, std::move(*content));
                     }
+                    if (!syntaxCheckFile(path)) {
+                        alreadyBroken.insert(path);
+                    }
                 }
             }
 
             auto applyResult = FixApplicator::apply(fixableFindings, Backup.getValue());
 
             // --verify: re-parse each modified file with clang++. Revert on
-            // any failure so users never ship broken code from a bad fix.
+            // regressions only — files that were already broken before the
+            // fix are not counted against --verify, since the fix can't be
+            // blamed for preexisting syntax errors.
             int rolledBack = 0;
             if (Verify.getValue()) {
                 std::vector<std::string> failingFiles;
                 for (const auto &[path, _] : originalContents) {
+                    if (alreadyBroken.count(path) > 0) {
+                        continue; // already broken before apply
+                    }
                     if (!syntaxCheckFile(path)) {
                         failingFiles.push_back(path);
                     }
