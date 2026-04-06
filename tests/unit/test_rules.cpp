@@ -10,7 +10,9 @@
 #include "../../src/rules/bugprone/narrow_wide_char_mismatch.hpp"
 #include "../../src/rules/bugprone/abrupt_termination.hpp"
 #include "../../src/rules/bugprone/copy_ctor_non_const.hpp"
+#include "../../src/rules/bugprone/unsequenced_modification.hpp"
 #include "../../src/rules/portability/pointer_integer_cast.hpp"
+#include "../../src/rules/ub/use_after_delete.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
@@ -2548,6 +2550,130 @@ TEST_CASE("BugproneCopyCtorNonConstRuleTest.IgnoresConstCopyCtor") {
                 T() : x(0) {}
                 T(const T &other) : x(other.x) {}
             };
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── ub/use-after-delete (CERT MEM30-C) ──────────────────────────────
+
+TEST_CASE("UbUseAfterDeleteRuleTest.DetectsDerefAfterDelete") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+        R"cpp(
+            int test() {
+                int *p = new int(42);
+                delete p;
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/use-after-delete");
+}
+
+TEST_CASE("UbUseAfterDeleteRuleTest.DetectsCallArgAfterDelete") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+        R"cpp(
+            extern void sink(int*);
+            void test() {
+                int *p = new int(42);
+                delete p;
+                sink(p);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("UbUseAfterDeleteRuleTest.IgnoresReassignmentBeforeUse") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+        R"cpp(
+            int test() {
+                int *p = new int(42);
+                delete p;
+                p = new int(99);
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("UbUseAfterDeleteRuleTest.IgnoresSingleDelete") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+        R"cpp(
+            void test() {
+                int *p = new int(42);
+                delete p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/unsequenced-modification (CERT EXP30-C) ────────────────
+
+TEST_CASE("BugproneUnsequencedModificationRuleTest.DetectsDoublePlusPlus") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneUnsequencedModificationRule>(),
+        R"cpp(
+            int test() {
+                int i = 0;
+                return i++ + i++;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/unsequenced-modification");
+}
+
+TEST_CASE("BugproneUnsequencedModificationRuleTest.DetectsInCallArgs") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneUnsequencedModificationRule>(),
+        R"cpp(
+            extern int f(int, int);
+            int test() {
+                int i = 0;
+                return f(i++, i++);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("BugproneUnsequencedModificationRuleTest.IgnoresSingleModification") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneUnsequencedModificationRule>(),
+        R"cpp(
+            int test() {
+                int i = 0;
+                return i++ + 1;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("BugproneUnsequencedModificationRuleTest.IgnoresDifferentVariables") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneUnsequencedModificationRule>(),
+        R"cpp(
+            int test() {
+                int i = 0, j = 0;
+                return i++ + j++;
+            }
         )cpp");
 
     REQUIRE(result.success);

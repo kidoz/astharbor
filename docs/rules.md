@@ -34,6 +34,7 @@ pure AST matcher.
 | `ub/sizeof-array-parameter` | `sizeof(parm)` where `parm` is a decayed array parameter — returns pointer size. | CERT EXP01-C |
 | `ub/static-array-oob-constant` | Constant array index that is outside the declared bounds. | CERT ARR30-C, CWE-125 |
 | `ub/uninitialized-local` | **(CFG)** Read of a local scalar reachable on a path with no prior write. | CERT EXP33-C, CWE-457 |
+| `ub/use-after-delete` | **(CFG)** Dereference / call-arg use of a local pointer after `delete` with no reassignment. | CERT MEM30-C, CWE-416 |
 | `ub/use-after-free` | **(CFG)** Dereference / call-arg use of a local pointer after `free()` with no reassignment. | CERT MEM30-C, CWE-416 |
 | `ub/use-after-move` | **(CFG)** Use of a local variable after `std::move` with no intervening reassignment. | `clang-tidy` `bugprone-use-after-move` |
 | `ub/virtual-call-in-ctor-dtor` | Virtual method called on `this` inside a ctor/dtor — derived override not dispatched. | CERT OOP50-CPP |
@@ -73,6 +74,7 @@ pure AST matcher.
 | `bugprone/identical-expressions` | The same variable on both sides of a comparison or arithmetic operator. | PVS-like expression sanity check |
 | `bugprone/sizeof-pointer-in-memfunc` | `memcpy`/`memmove`/etc. with `sizeof(ptr)` for the length. | CERT EXP01-C, CWE-467 |
 | `bugprone/suspicious-memset` | `memset` with `sizeof(pointer)` as the size. | `clang-tidy` `bugprone-sizeof-expression` |
+| `bugprone/unsequenced-modification` | Same variable modified twice in one expression without a sequence point. | CERT EXP30-C, CWE-758 |
 | `bugprone/suspicious-semicolon` | `if` statement whose body is only a stray `;`. | `clang-tidy` `bugprone-suspicious-semicolon` |
 | `bugprone/swapped-arguments` | Argument variable names cross-match the callee's parameter names. | `clang-tidy` `readability-named-parameter`-adjacent |
 | `bugprone/unsafe-memory-operation` | `memset`/`memcpy`/`memmove` on non-trivially-copyable objects. | `clang-tidy` `bugprone-undefined-memory-manipulation` |

@@ -9,6 +9,7 @@
 #include "../rules/bugprone/narrow_wide_char_mismatch.hpp"
 #include "../rules/bugprone/abrupt_termination.hpp"
 #include "../rules/bugprone/copy_ctor_non_const.hpp"
+#include "../rules/bugprone/unsequenced_modification.hpp"
 #include "../rules/bugprone/unsafe_memory_operation.hpp"
 #include "../rules/modernize/use_nullptr.hpp"
 #include "../rules/modernize/use_override.hpp"
@@ -57,6 +58,7 @@
 #include "../rules/ub/sizeof_array_parameter.hpp"
 #include "../rules/ub/use_after_move.hpp"
 #include "../rules/ub/use_after_free.hpp"
+#include "../rules/ub/use_after_delete.hpp"
 #include "../rules/ub/free_of_non_heap.hpp"
 #include "../rules/ub/double_free_local.hpp"
 #include "../rules/ub/uninitialized_local.hpp"
@@ -84,6 +86,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<BugproneNarrowWideCharMismatchRule>());
     registry.registerRule(std::make_unique<BugproneAbruptTerminationRule>());
     registry.registerRule(std::make_unique<BugproneCopyCtorNonConstRule>());
+    registry.registerRule(std::make_unique<BugproneUnsequencedModificationRule>());
     registry.registerRule(std::make_unique<BugproneUnsafeMemoryOperationRule>());
     registry.registerRule(std::make_unique<SecurityNoGetsRule>());
     registry.registerRule(std::make_unique<SecurityUnsafeTempFileRule>());
@@ -126,6 +129,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<UbSizeofArrayParameterRule>());
     registry.registerRule(std::make_unique<UbUseAfterMoveRule>());
     registry.registerRule(std::make_unique<UbUseAfterFreeRule>());
+    registry.registerRule(std::make_unique<UbUseAfterDeleteRule>());
     registry.registerRule(std::make_unique<UbFreeOfNonHeapRule>());
     registry.registerRule(std::make_unique<UbDoubleFreeLocalRule>());
     registry.registerRule(std::make_unique<UbUninitializedLocalRule>());
