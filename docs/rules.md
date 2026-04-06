@@ -66,7 +66,9 @@ pure AST matcher.
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
 | `bugprone/assignment-in-condition` | Assignments used inside `if`/`while`/`do`/`for` conditions. | CERT EXP45-C, `clang-tidy` `bugprone-assignment-in-if-condition` |
+| `bugprone/abrupt-termination` | `abort()`/`terminate()`/`exit()` called from non-main code. | CERT ERR50-CPP |
 | `bugprone/char-eof-comparison` | `getchar`/`getc`/`fgetc` return narrowed to `char` — loses EOF sentinel. | CERT FIO34-C, CWE-197 |
+| `bugprone/copy-ctor-non-const` | Copy constructor takes a non-const reference source parameter. | CERT OOP58-CPP |
 | `bugprone/narrow-wide-char-mismatch` | Narrow-string function called with wide-char source or vice versa. | CERT STR38-C, CWE-704 |
 | `bugprone/identical-expressions` | The same variable on both sides of a comparison or arithmetic operator. | PVS-like expression sanity check |
 | `bugprone/sizeof-pointer-in-memfunc` | `memcpy`/`memmove`/etc. with `sizeof(ptr)` for the length. | CERT EXP01-C, CWE-467 |
@@ -108,6 +110,7 @@ pure AST matcher.
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
 | `portability/c-style-variadic` | C-style variadic function definition (`void f(int, ...)`) — use templates. | CERT DCL50-CPP |
+| `portability/pointer-integer-cast` | Cast between pointer and narrower integer type — truncates on LP64. | CERT INT36-C, MISRA 11.6, CWE-587 |
 | `portability/vla-in-cxx` | Variable-length arrays in C++ — not portable, not in ISO C++. | `clang-tidy` `cppcoreguidelines-avoid-c-arrays` |
 
 ### `best-practice/`

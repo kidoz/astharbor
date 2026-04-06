@@ -7,6 +7,8 @@
 #include "../rules/bugprone/sizeof_pointer_in_memfunc.hpp"
 #include "../rules/bugprone/char_eof_comparison.hpp"
 #include "../rules/bugprone/narrow_wide_char_mismatch.hpp"
+#include "../rules/bugprone/abrupt_termination.hpp"
+#include "../rules/bugprone/copy_ctor_non_const.hpp"
 #include "../rules/bugprone/unsafe_memory_operation.hpp"
 #include "../rules/modernize/use_nullptr.hpp"
 #include "../rules/modernize/use_override.hpp"
@@ -46,6 +48,7 @@
 #include "../rules/readability/use_using_alias.hpp"
 #include "../rules/portability/vla_in_cxx.hpp"
 #include "../rules/portability/c_style_variadic.hpp"
+#include "../rules/portability/pointer_integer_cast.hpp"
 #include "../rules/best_practice/no_raw_new_delete.hpp"
 #include "../rules/best_practice/explicit_single_arg_ctor.hpp"
 #include "../rules/ub/c_style_cast_pointer_punning.hpp"
@@ -79,6 +82,8 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<BugproneSizeofPointerInMemfuncRule>());
     registry.registerRule(std::make_unique<BugproneCharEofComparisonRule>());
     registry.registerRule(std::make_unique<BugproneNarrowWideCharMismatchRule>());
+    registry.registerRule(std::make_unique<BugproneAbruptTerminationRule>());
+    registry.registerRule(std::make_unique<BugproneCopyCtorNonConstRule>());
     registry.registerRule(std::make_unique<BugproneUnsafeMemoryOperationRule>());
     registry.registerRule(std::make_unique<SecurityNoGetsRule>());
     registry.registerRule(std::make_unique<SecurityUnsafeTempFileRule>());
@@ -112,6 +117,7 @@ void registerBuiltinRules(RuleRegistry& registry) {
     registry.registerRule(std::make_unique<ReadabilityUseUsingAliasRule>());
     registry.registerRule(std::make_unique<PortabilityVlaInCxxRule>());
     registry.registerRule(std::make_unique<PortabilityCStyleVariadicRule>());
+    registry.registerRule(std::make_unique<PortabilityPointerIntegerCastRule>());
     registry.registerRule(std::make_unique<BestPracticeNoRawNewDeleteRule>());
     registry.registerRule(std::make_unique<BestPracticeExplicitSingleArgCtorRule>());
     registry.registerRule(std::make_unique<UbCStyleCastPointerPunningRule>());

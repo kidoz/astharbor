@@ -8,6 +8,9 @@
 #include "../../src/rules/bugprone/sizeof_pointer_in_memfunc.hpp"
 #include "../../src/rules/bugprone/char_eof_comparison.hpp"
 #include "../../src/rules/bugprone/narrow_wide_char_mismatch.hpp"
+#include "../../src/rules/bugprone/abrupt_termination.hpp"
+#include "../../src/rules/bugprone/copy_ctor_non_const.hpp"
+#include "../../src/rules/portability/pointer_integer_cast.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
@@ -2433,6 +2436,118 @@ TEST_CASE("BugproneNarrowWideCharMismatchRuleTest.IgnoresCorrectUsage") {
                 strlen("hello");
                 wcslen(L"hello");
             }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── portability/pointer-integer-cast (CERT INT36-C) ─────────────────
+
+TEST_CASE("PortabilityPointerIntegerCastRuleTest.DetectsPtrToInt") {
+    // C mode: `(int)ptr` is a warning, not a hard error like C++.
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityPointerIntegerCastRule>(),
+        R"(
+            int test(void *p) {
+                return (int)p;
+            }
+        )",
+        {"-std=c17", "-w"}, "input.c");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "portability/pointer-integer-cast");
+}
+
+TEST_CASE("PortabilityPointerIntegerCastRuleTest.DetectsIntToPtr") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityPointerIntegerCastRule>(),
+        R"(
+            void *test(int i) {
+                return (void*)i;
+            }
+        )",
+        {"-std=c17", "-w"}, "input.c");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+}
+
+TEST_CASE("PortabilityPointerIntegerCastRuleTest.IgnoresIntptrSizedCast") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PortabilityPointerIntegerCastRule>(),
+        R"(
+            void test(void *p) {
+                long long i = (long long)p;
+                (void)i;
+            }
+        )",
+        {"-std=c17", "-w"}, "input.c");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/abrupt-termination (CERT ERR50-CPP) ────────────────────
+
+TEST_CASE("BugproneAbruptTerminationRuleTest.DetectsAbortInLibraryCode") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
+        R"cpp(
+            extern "C" void abort();
+            void library_func() {
+                abort();
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/abrupt-termination");
+}
+
+TEST_CASE("BugproneAbruptTerminationRuleTest.IgnoresMainFunction") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
+        R"cpp(
+            extern "C" void exit(int);
+            int main() {
+                exit(1);
+                return 0;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+// ─── bugprone/copy-ctor-non-const (CERT OOP58-CPP) ──────────────────
+
+TEST_CASE("BugproneCopyCtorNonConstRuleTest.DetectsNonConstCopyCtor") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
+        R"cpp(
+            struct T {
+                int x;
+                T() : x(0) {}
+                T(T &other) : x(other.x) {}
+            };
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/copy-ctor-non-const");
+}
+
+TEST_CASE("BugproneCopyCtorNonConstRuleTest.IgnoresConstCopyCtor") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
+        R"cpp(
+            struct T {
+                int x;
+                T() : x(0) {}
+                T(const T &other) : x(other.x) {}
+            };
         )cpp");
 
     REQUIRE(result.success);
