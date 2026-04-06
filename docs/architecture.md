@@ -430,6 +430,4 @@ earlier docs described. Notable changes:
 - **`compare` command** — minimal `clang++`/`g++` diagnostic counter as a
   first iteration; full cross-compiler diffing is still future work.
 
-Still outstanding: Tier 2 CFG-based rules (`use-after-move`,
-`uninitialized-local`, `double-free-local`) and any form of interprocedural
-or whole-program analysis.
+Still outstanding: any form of interprocedural or whole-program analysis.
