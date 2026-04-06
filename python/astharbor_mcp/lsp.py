@@ -219,6 +219,7 @@ class LspServer:
                 "codeActionKinds": [CODE_ACTION_KIND_QUICKFIX],
                 "resolveProvider": False,
             },
+            "hoverProvider": True,
         }
         self._respond(request_id, result={
             "capabilities": capabilities,
@@ -253,6 +254,46 @@ class LspServer:
         self._text_by_uri.pop(uri, None)
         self._notify("textDocument/publishDiagnostics",
                      {"uri": uri, "diagnostics": []})
+
+    def _handle_did_change_configuration(self, params: dict[str, Any]) -> None:
+        """Re-analyze all open files when workspace configuration changes.
+
+        This lets users modify `.astharbor.yml` (severity overrides,
+        checks pattern, header-filter regex) and see the effect without
+        restarting the language server.
+        """
+        log.info("Configuration changed — re-analyzing %d open file(s)",
+                 len(self._findings_by_uri))
+        for uri in list(self._findings_by_uri.keys()):
+            self._analyze_and_publish(uri, _uri_to_path(uri))
+
+    def _handle_hover(self, request_id: Any, params: dict[str, Any]) -> None:
+        """Return rule info when hovering over a diagnostic."""
+        uri = params.get("textDocument", {}).get("uri", "")
+        position = params.get("position", {})
+        hover_line = position.get("line", -1)
+        if not uri:
+            self._respond(request_id, result=None)
+            return
+        findings = self._findings_by_uri.get(uri, [])
+        for finding in findings:
+            finding_line = max(0, int(finding.get("line", 1)) - 1)
+            if finding_line != hover_line:
+                continue
+            rule_id = finding.get("ruleId", "")
+            severity = finding.get("severity", "warning")
+            message = finding.get("message", "")
+            category = finding.get("category", "")
+            markdown = (
+                f"**[{rule_id}]** ({severity})\n\n"
+                f"{message}\n\n"
+                f"Category: `{category}`"
+            )
+            self._respond(request_id, result={
+                "contents": {"kind": "markdown", "value": markdown},
+            })
+            return
+        self._respond(request_id, result=None)
 
     def _handle_code_action(self, request_id: Any, params: dict[str, Any]) -> None:
         """Return quick-fix CodeActions for findings overlapping the range.
@@ -372,6 +413,10 @@ class LspServer:
                 pass  # we only re-analyze on save
             elif method == "textDocument/codeAction":
                 self._handle_code_action(request_id, params)
+            elif method == "textDocument/hover":
+                self._handle_hover(request_id, params)
+            elif method == "workspace/didChangeConfiguration":
+                self._handle_did_change_configuration(params)
             else:
                 # Unknown method. Reply with MethodNotFound only if this was
                 # a request; notifications silently ignore unknown methods

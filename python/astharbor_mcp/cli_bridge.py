@@ -90,6 +90,16 @@ def run_rules_json() -> list[dict]:
     return json.loads(raw)
 
 
+def run_analyze_incremental(path: str, fmt: str = "json") -> str:
+    """Run incremental analysis — only re-analyze TUs whose inputs changed."""
+    return run_cli("analyze", path, f"--format={fmt}", "--incremental", "--save-run", "--")
+
+
+def run_analyze_changed(directory: str, fmt: str = "json") -> str:
+    """Run analysis on only git-changed files in a directory."""
+    return run_cli("analyze", directory, f"--format={fmt}", "--changed-only", "--")
+
+
 def run_doctor(fmt: str = "text") -> str:
     """Run doctor command."""
     return run_cli("doctor", f"--format={fmt}")

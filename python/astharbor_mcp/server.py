@@ -73,6 +73,37 @@ def apply_fix(path: str, confirm: bool, rule: str = "", backup: bool = True) -> 
 
 
 @mcp.tool()
+def analyze_changed_files(directory: str) -> str:
+    """Analyze only git-changed files in a project directory."""
+    raw = cli_bridge.run_analyze_changed(directory, fmt="json")
+    parsed = json.loads(raw)
+    result = AnalysisResult.model_validate(parsed)
+    cache.store(result)
+    return result.model_dump_json(by_alias=True, indent=2)
+
+
+@mcp.tool()
+def analyze_incremental(directory: str) -> str:
+    """Incremental analysis — only re-analyze TUs whose source or headers changed."""
+    raw = cli_bridge.run_analyze_incremental(directory, fmt="json")
+    parsed = json.loads(raw)
+    result = AnalysisResult.model_validate(parsed)
+    cache.store(result)
+    return result.model_dump_json(by_alias=True, indent=2)
+
+
+@mcp.tool()
+def explain_rule(rule_id: str) -> str:
+    """Return detailed metadata for a specific rule: what it detects,
+    its severity, category, and comparable checks in other tools."""
+    rules = cli_bridge.run_rules_json()
+    for rule in rules:
+        if rule.get("id") == rule_id:
+            return json.dumps(rule, indent=2)
+    return f"Error: rule '{rule_id}' not found. Use list_rules_json() to see available rules."
+
+
+@mcp.tool()
 def doctor_toolchains() -> str:
     """Run doctor command to verify toolchain health."""
     return cli_bridge.run_doctor(fmt="text")

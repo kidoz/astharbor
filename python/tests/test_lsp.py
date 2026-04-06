@@ -241,3 +241,75 @@ def test_code_action_without_prior_analysis_is_empty(tmp_path):
         "context": {"diagnostics": []},
     })
     assert server.sent[0]["result"] == []
+
+
+def test_initialize_advertises_hover_provider():
+    server = CapturingServer()
+    server._handle_initialize(request_id=20, _params={})
+    caps = server.sent[0]["result"]["capabilities"]
+    assert caps.get("hoverProvider") is True
+
+
+def test_hover_returns_rule_info_on_finding_line(tmp_path):
+    source = tmp_path / "main.cpp"
+    shutil.copy(EXAMPLE_FILE, source)
+    uri = lsp._path_to_uri(str(source))
+
+    server = CapturingServer()
+    server._handle_did_open({
+        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+    })
+    # Find the line of the first finding (0-based).
+    findings = server._findings_by_uri.get(uri, [])
+    assert findings, "expected findings from the example file"
+    hover_line = max(0, int(findings[0].get("line", 1)) - 1)
+    server.sent.clear()
+
+    server._handle_hover(request_id=200, params={
+        "textDocument": {"uri": uri},
+        "position": {"line": hover_line, "character": 0},
+    })
+    assert len(server.sent) == 1
+    result = server.sent[0]["result"]
+    assert result is not None
+    assert "markdown" == result["contents"]["kind"]
+    assert findings[0]["ruleId"] in result["contents"]["value"]
+
+
+def test_hover_returns_null_on_clean_line(tmp_path):
+    source = tmp_path / "main.cpp"
+    shutil.copy(EXAMPLE_FILE, source)
+    uri = lsp._path_to_uri(str(source))
+
+    server = CapturingServer()
+    server._handle_did_open({
+        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+    })
+    server.sent.clear()
+
+    # Line 0 is unlikely to have a finding (it's typically a comment or include).
+    server._handle_hover(request_id=201, params={
+        "textDocument": {"uri": uri},
+        "position": {"line": 0, "character": 0},
+    })
+    assert server.sent[0]["result"] is None
+
+
+def test_did_change_configuration_re_analyzes(tmp_path):
+    source = tmp_path / "main.cpp"
+    shutil.copy(EXAMPLE_FILE, source)
+    uri = lsp._path_to_uri(str(source))
+
+    server = CapturingServer()
+    server._handle_did_open({
+        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+    })
+    initial_count = len([m for m in server.sent
+                         if m.get("method") == "textDocument/publishDiagnostics"])
+    server.sent.clear()
+
+    server._handle_did_change_configuration({})
+    reanalyzed = [m for m in server.sent
+                  if m.get("method") == "textDocument/publishDiagnostics"]
+    assert len(reanalyzed) == 1
+    assert reanalyzed[0]["params"]["uri"] == uri
