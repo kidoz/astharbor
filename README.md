@@ -43,10 +43,16 @@ To set up the Python MCP server:
 
 ```bash
 cd python
-python3 -m venv venv
-source venv/bin/activate
-pip install -e . pytest
+uv venv .venv
+uv sync --group dev
+uv run ruff format .
+uv run ruff check .
+uv run ty check
+uv run pytest -q
 ```
+
+From the repo root you can also use `just python-dev`, `just python-format`,
+`just python-lint`, `just python-type`, `just python-check`, or `just test`.
 
 ## CLI Usage Examples
 
