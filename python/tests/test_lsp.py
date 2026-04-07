@@ -7,7 +7,6 @@ tests of the stdio framing layer live at the bottom of the file.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 from typing import Any
@@ -304,8 +303,6 @@ def test_did_change_configuration_re_analyzes(tmp_path):
     server._handle_did_open({
         "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
     })
-    initial_count = len([m for m in server.sent
-                         if m.get("method") == "textDocument/publishDiagnostics"])
     server.sent.clear()
 
     server._handle_did_change_configuration({})

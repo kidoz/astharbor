@@ -10,8 +10,6 @@ import os
 import shutil
 import subprocess
 
-import pytest
-
 from astharbor_mcp import cli_bridge
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))

@@ -6,7 +6,6 @@ import time
 
 from astharbor_mcp.server import (
     analyze_file,
-    analyze_project,
     list_rules,
     list_rules_json,
     preview_fix,

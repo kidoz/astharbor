@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 
-from .models import AnalysisResult, ApplyResult
+from .models import AnalysisResult
 
 
 def get_astharbor_path() -> str:
