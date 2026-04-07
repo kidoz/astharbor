@@ -29,7 +29,6 @@ venv/
 *.egg-info/
 dist/
 .pytest_cache/
-uv.lock
 
 # Claude / AI agent
 .cache/
