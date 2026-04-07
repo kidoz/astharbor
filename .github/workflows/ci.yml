@@ -10,19 +10,27 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev libclang-cpp18-dev cmake ninja-build python3-pip
-        sudo pip3 install meson pytest
-    - name: Build C++
-      run: |
-        CXX=clang++-18 CC=clang-18 meson setup build
-        meson compile -C build
-        meson test -C build
-    - name: Test Python MCP
-      run: |
-        cd python
-        pip install -e . pytest
-        PATH="$PWD/../build:$PATH" pytest tests/
+      - uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            llvm-18-dev clang-18 libclang-18-dev libclang-cpp18-dev \
+            cmake ninja-build meson
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: taiki-e/install-action@just
+
+      - name: Build C++
+        run: |
+          CXX=clang++-18 CC=clang-18 meson setup build
+          meson compile -C build
+
+      - name: Run Repo Test Workflow
+        run: just test
