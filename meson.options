@@ -1,1 +1,1 @@
-option('tests', type : 'boolean', value : true, description : 'Build and run unit tests (requires gtest)')
+option('tests', type : 'boolean', value : true, description : 'Build and run unit tests (requires Catch2)')

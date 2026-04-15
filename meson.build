@@ -5,11 +5,14 @@ project('ASTHarbor', ['cpp', 'c'],
 
 cpp_compiler = meson.get_compiler('cpp')
 
-llvm_dep = dependency('llvm', version : '>=14.0', required : true)
-
-llvm_config = find_program('llvm-config', 'llvm-config-23', 'llvm-config-22', 'llvm-config-21', 'llvm-config-20', 'llvm-config-19', 'llvm-config-18', 'llvm-config-17', 'llvm-config-16', 'llvm-config-15', 'llvm-config-14', required : true)
+llvm_config = find_program('llvm-config', 'llvm-config-23', 'llvm-config-22', 'llvm-config-21', 'llvm-config-20', 'llvm-config-19', 'llvm-config-18', 'llvm-config-17', 'llvm-config-16', 'llvm-config-15', 'llvm-config-14', '/opt/homebrew/opt/llvm/bin/llvm-config', '/opt/homebrew/opt/llvm@22/bin/llvm-config', '/opt/homebrew/opt/llvm@21/bin/llvm-config', required : true)
 llvm_libdir = run_command(llvm_config, '--libdir', check : true).stdout().strip()
 llvm_includedir = run_command(llvm_config, '--includedir', check : true).stdout().strip()
+llvm_dep = dependency('llvm', version : '>=14.0', required : false)
+if not llvm_dep.found()
+  llvm_link_args = run_command(llvm_config, '--ldflags', '--libs', '--system-libs', check : true).stdout().strip().split()
+  llvm_dep = declare_dependency(compile_args : ['-isystem' + llvm_includedir], link_args : llvm_link_args)
+endif
 
 clang_cpp_lib = cpp_compiler.find_library('clang-cpp', dirs : llvm_libdir, required : true)
 

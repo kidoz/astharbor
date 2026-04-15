@@ -5,7 +5,7 @@ default: build
 
 # Build the project using meson
 build:
-    meson setup build || true
+    meson setup build --reconfigure
     meson compile -C build
 
 # Run the C++ unit tests
