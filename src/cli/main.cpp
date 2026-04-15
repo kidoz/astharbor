@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +20,12 @@
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
 #include <cstdint>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/FormatVariadic.h>
+#include <llvm/Support/JSON.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/Program.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/xxhash.h>
 #include "astharbor/rule_registry.hpp"
 #include "astharbor/analyzer.hpp"
@@ -39,19 +47,18 @@ static llvm::cl::opt<std::string> Format("format",
                                          llvm::cl::desc("Output format (text, json, sarif)"),
                                          llvm::cl::init("text"), llvm::cl::cat(ASTHarborCategory));
 
-static llvm::cl::opt<bool> Apply("apply", llvm::cl::desc("Apply safe fixes"),
-                                 llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+static llvm::cl::opt<bool> Apply("apply", llvm::cl::desc("Apply safe fixes"), llvm::cl::init(false),
+                                 llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<bool> DryRun("dry-run", llvm::cl::desc("Preview fixes without applying"),
-                                   llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+                                  llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string> RuleFilter("rule", llvm::cl::desc("Filter by rule ID pattern"),
-                                              llvm::cl::init(""),
-                                              llvm::cl::cat(ASTHarborCategory));
+                                             llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<bool> Backup("backup",
-                                   llvm::cl::desc("Create .bak backup before applying fixes"),
-                                   llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
+                                  llvm::cl::desc("Create .bak backup before applying fixes"),
+                                  llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<bool>
     AllSafe("all-safe",
@@ -73,9 +80,9 @@ static llvm::cl::opt<std::string>
                            "to ~/.astharbor/runs/<runId>.json"),
             llvm::cl::init(""), llvm::cl::ValueOptional, llvm::cl::cat(ASTHarborCategory));
 
-static llvm::cl::opt<std::string>
-    RunId("run-id", llvm::cl::desc("Load a previously saved run by id"),
-          llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
+static llvm::cl::opt<std::string> RunId("run-id",
+                                        llvm::cl::desc("Load a previously saved run by id"),
+                                        llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string>
     FindingId("finding-id",
@@ -95,8 +102,7 @@ static llvm::cl::opt<bool>
             llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string>
-    Std("std",
-        llvm::cl::desc("Language standard to use in single-file mode, e.g. c++20, c17"),
+    Std("std", llvm::cl::desc("Language standard to use in single-file mode, e.g. c++20, c17"),
         llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string>
@@ -119,7 +125,7 @@ static llvm::cl::opt<std::string>
     CompareCompilers("compare-compilers",
                      llvm::cl::desc("Comma-separated list of compilers for `astharbor "
                                     "compare`. Defaults to 'clang++,g++'. Each compiler is "
-                                    "invoked with -fsyntax-only -Wall -Wextra via popen."),
+                                    "invoked with -fsyntax-only -Wall -Wextra."),
                      llvm::cl::init(""), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<bool>
@@ -135,9 +141,16 @@ static llvm::cl::opt<bool>
 // gaps only.
 static Config projectConfig; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
+static void emitJson(llvm::json::Value value, std::ostream &out) {
+    std::string output;
+    llvm::raw_string_ostream stream(output);
+    stream << llvm::formatv("{0:2}", std::move(value));
+    stream.flush();
+    out << output << "\n";
+}
+
 static void applyConfigDefaults() {
-    auto applyConfigString = [](llvm::cl::opt<std::string> &option,
-                                 const std::string &value) {
+    auto applyConfigString = [](llvm::cl::opt<std::string> &option, const std::string &value) {
         if (!value.empty() && option.getNumOccurrences() == 0) {
             option = value;
         }
@@ -178,7 +191,8 @@ void print_help() {
     std::cout << "  --finding-id=ID     Apply fix only for a specific finding id\n";
     std::cout << "  --backup            Create .bak backup files before modifying\n";
     std::cout << "  --all-safe          Apply every safe fix (alias for --apply) with summary\n";
-    std::cout << "  --verify            Run clang++ -fsyntax-only after apply; roll back on failure\n";
+    std::cout
+        << "  --verify            Run clang++ -fsyntax-only after apply; roll back on failure\n";
     std::cout << "\nCommon options:\n";
     std::cout << "  --format=FORMAT     Output format: text, json, sarif\n";
 }
@@ -192,9 +206,8 @@ parseChecksPattern(const std::string &input) {
     size_t start = 0;
     while (start <= input.size()) {
         size_t comma = input.find(',', start);
-        std::string token = input.substr(start, comma == std::string::npos
-                                                    ? std::string::npos
-                                                    : comma - start);
+        std::string token =
+            input.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
         if (!token.empty()) {
             if (token.front() == '-') {
                 if (token.size() > 1) {
@@ -220,8 +233,7 @@ parseChecksPattern(const std::string &input) {
 /// replacing '/' with '-' (e.g. `modernize-use-nullptr`). This lets users
 /// migrating from clang-tidy keep their existing `.clang-tidy` Checks
 /// strings mostly intact.
-static bool ruleIsEnabled(const std::string &ruleId,
-                          const std::vector<std::string> &positive,
+static bool ruleIsEnabled(const std::string &ruleId, const std::vector<std::string> &positive,
                           const std::vector<std::string> &negative) {
     std::string aliasId = ruleId;
     std::replace(aliasId.begin(), aliasId.end(), '/', '-');
@@ -271,12 +283,10 @@ static std::string hashFileContent(const std::string &path) {
     if (!in) {
         return {};
     }
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     uint64_t hash = llvm::xxh3_64bits(content);
     char buffer[17];
-    std::snprintf(buffer, sizeof(buffer), "%016llx",
-                  static_cast<unsigned long long>(hash));
+    std::snprintf(buffer, sizeof(buffer), "%016llx", static_cast<unsigned long long>(hash));
     return std::string(buffer);
 }
 
@@ -287,8 +297,7 @@ static std::optional<std::string> readFileContent(const std::string &path) {
     if (!in) {
         return std::nullopt;
     }
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return content;
 }
 
@@ -302,22 +311,57 @@ static bool writeFileContent(const std::string &path, const std::string &content
     return static_cast<bool>(out);
 }
 
+static std::optional<int>
+executeProgram(const std::string &programName, const std::vector<std::string> &arguments,
+               const std::array<std::optional<llvm::StringRef>, 3> &redirects) {
+    auto program = llvm::sys::findProgramByName(programName);
+    if (!program) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> ownedArgs;
+    ownedArgs.reserve(arguments.size() + 1);
+    ownedArgs.push_back(*program);
+    ownedArgs.insert(ownedArgs.end(), arguments.begin(), arguments.end());
+
+    std::vector<llvm::StringRef> argRefs;
+    argRefs.reserve(ownedArgs.size());
+    for (const auto &arg : ownedArgs) {
+        argRefs.emplace_back(arg);
+    }
+
+    std::string errorMessage;
+    bool executionFailed = false;
+    int exitCode = llvm::sys::ExecuteAndWait(*program, argRefs, std::nullopt, redirects, 0, 0,
+                                             &errorMessage, &executionFailed);
+    if (executionFailed || !errorMessage.empty()) {
+        return std::nullopt;
+    }
+    return exitCode;
+}
+
+static std::filesystem::path temporaryOutputPath(const std::string &prefix) {
+    std::error_code ec;
+    auto directory = std::filesystem::temp_directory_path(ec);
+    if (ec) {
+        directory = std::filesystem::current_path();
+    }
+    auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    return directory / (prefix + "-" + std::to_string(stamp) + ".txt");
+}
+
 /// Run `clang++ -fsyntax-only` on `path`. Returns true if the file parses
 /// cleanly (exit code 0), false otherwise. Absence of clang++ on the host
 /// is treated as "verification unavailable" — the caller can choose to
-/// proceed. We use popen here for consistency with `compare`.
+/// proceed.
 static bool syntaxCheckFile(const std::string &path) {
-    std::string command = "clang++ -fsyntax-only -w \"" + path + "\" 2>/dev/null";
-    FILE *pipe = popen(command.c_str(), "r");
-    if (pipe == nullptr) {
+    std::array<std::optional<llvm::StringRef>, 3> redirects = {std::nullopt, llvm::StringRef(""),
+                                                               llvm::StringRef("")};
+    auto exitCode = executeProgram("clang++", {"-fsyntax-only", "-w", path}, redirects);
+    if (!exitCode) {
         return true;
     }
-    // Drain stdout/stderr; we only care about exit code.
-    char buffer[512];
-    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    }
-    int status = pclose(pipe);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    return *exitCode == 0;
 }
 
 /// Return the set of files reported as modified by `git diff --name-only`
@@ -353,9 +397,8 @@ static std::optional<std::vector<std::string>> gitChangedFiles() {
 /// Keep only paths whose absolute form or basename is present in `changed`.
 /// The match is permissive on purpose — git reports paths relative to the
 /// repo root, while ASTHarbor receives whatever the user passed on argv.
-static std::vector<std::string>
-filterByChangedFiles(const std::vector<std::string> &paths,
-                     const std::vector<std::string> &changed) {
+static std::vector<std::string> filterByChangedFiles(const std::vector<std::string> &paths,
+                                                     const std::vector<std::string> &changed) {
     std::vector<std::string> filtered;
     for (const auto &path : paths) {
         std::filesystem::path candidate(path);
@@ -374,8 +417,8 @@ filterByChangedFiles(const std::vector<std::string> &paths,
 /// Apply --std and --compiler-profile adjusters to a ClangTool.
 static void applyCompilerAdjusters(ClangTool &tool) {
     if (!Std.getValue().empty()) {
-        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
-            ("-std=" + Std.getValue()).c_str(), ArgumentInsertPosition::BEGIN));
+        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(("-std=" + Std.getValue()).c_str(),
+                                                               ArgumentInsertPosition::BEGIN));
     }
     const std::string profile = CompilerProfile.getValue();
     if (profile == "gcc") {
@@ -407,11 +450,10 @@ struct AnalysisChunkResult {
 /// Run analysis on a single chunk of source files with a fresh RuleRegistry.
 /// Used as the per-worker function for parallel analysis; the sequential
 /// path just calls it once with all sources.
-static AnalysisChunkResult
-runAnalysisChunk(const std::vector<std::string> &chunkPaths,
-                 CompilationDatabase &compilationDb,
-                 const std::vector<std::string> &positivePatterns,
-                 const std::vector<std::string> &negativePatterns) {
+static AnalysisChunkResult runAnalysisChunk(const std::vector<std::string> &chunkPaths,
+                                            CompilationDatabase &compilationDb,
+                                            const std::vector<std::string> &positivePatterns,
+                                            const std::vector<std::string> &negativePatterns) {
     RuleRegistry registry;
     registerBuiltinRules(registry);
 
@@ -471,8 +513,7 @@ runAnalysisChunk(const std::vector<std::string> &chunkPaths,
             }
         }
     }
-    return {std::move(findings), toolExitCode, std::move(dependencies),
-            std::move(depHashes)};
+    return {std::move(findings), toolExitCode, std::move(dependencies), std::move(depHashes)};
 }
 
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
@@ -496,7 +537,7 @@ static std::optional<CommonOptionsParser> setupParser(int argc, const char **arg
 /// Run analysis and return findings. Honors --jobs, --changed-only, --checks,
 /// --std, --compiler-profile, --verbose.
 static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
-                                                   const RuleRegistry &registry) {
+                                                  const RuleRegistry &registry) {
     const bool verbose = Verbose.getValue();
     std::vector<std::string> sourcePaths = parser.getSourcePathList();
     CompilationDatabase &compilationDb = parser.getCompilations();
@@ -504,8 +545,8 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     if (sourcePaths.empty()) {
         sourcePaths = compilationDb.getAllFiles();
         if (sourcePaths.empty()) {
-            llvm::errs()
-                << "Error: No source files specified and could not find any in the compilation database.\n";
+            llvm::errs() << "Error: No source files specified and could not find any in the "
+                            "compilation database.\n";
             return {{}, 2};
         }
         if (verbose) {
@@ -647,9 +688,8 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                     }
                 }
                 if (verbose) {
-                    llvm::errs() << "[verbose] --incremental: " << unchangedFiles.size()
-                                 << " of " << sourcePaths.size()
-                                 << " file(s) unchanged; " << invalidatedByDep
+                    llvm::errs() << "[verbose] --incremental: " << unchangedFiles.size() << " of "
+                                 << sourcePaths.size() << " file(s) unchanged; " << invalidatedByDep
                                  << " invalidated by header dep changes; carrying "
                                  << carriedFindings.size() << " finding(s) forward\n";
                 }
@@ -724,8 +764,8 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     int worstExitCode = 0;
 
     if (workerCount == 1) {
-        auto chunkResult = runAnalysisChunk(sourcePaths, compilationDb, positivePatterns,
-                                             negativePatterns);
+        auto chunkResult =
+            runAnalysisChunk(sourcePaths, compilationDb, positivePatterns, negativePatterns);
         allFindings = std::move(chunkResult.findings);
         worstExitCode = chunkResult.exitCode;
         collectedDependencies = std::move(chunkResult.dependencies);
@@ -745,8 +785,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                 continue;
             }
             futures.push_back(std::async(std::launch::async, [&, chunk]() {
-                return runAnalysisChunk(chunk, compilationDb, positivePatterns,
-                                        negativePatterns);
+                return runAnalysisChunk(chunk, compilationDb, positivePatterns, negativePatterns);
             }));
         }
         for (auto &future : futures) {
@@ -801,23 +840,23 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                 return false;
             };
             size_t beforeCount = allFindings.size();
-            allFindings.erase(
-                std::remove_if(allFindings.begin(), allFindings.end(),
-                               [&](const Finding &finding) {
-                                   if (isMainSource(finding.file)) {
-                                       return false;
-                                   }
-                                   return !std::regex_search(finding.file, filterRegex);
-                               }),
-                allFindings.end());
+            allFindings.erase(std::remove_if(allFindings.begin(), allFindings.end(),
+                                             [&](const Finding &finding) {
+                                                 if (isMainSource(finding.file)) {
+                                                     return false;
+                                                 }
+                                                 return !std::regex_search(finding.file,
+                                                                           filterRegex);
+                                             }),
+                              allFindings.end());
             if (verbose) {
                 llvm::errs() << "[verbose] HeaderFilterRegex filtered "
                              << (beforeCount - allFindings.size()) << " of " << beforeCount
                              << " finding(s)\n";
             }
         } catch (const std::regex_error &err) {
-            llvm::errs() << "Warning: invalid HeaderFilterRegex in .astharbor.yml: "
-                         << err.what() << "\n";
+            llvm::errs() << "Warning: invalid HeaderFilterRegex in .astharbor.yml: " << err.what()
+                         << "\n";
         }
     }
 
@@ -836,8 +875,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
     // Merge any incremental-carryover findings before assigning ids so
     // carried findings get stable ids within the new run.
     if (!carriedFindings.empty()) {
-        allFindings.insert(allFindings.end(),
-                           std::make_move_iterator(carriedFindings.begin()),
+        allFindings.insert(allFindings.end(), std::make_move_iterator(carriedFindings.begin()),
                            std::make_move_iterator(carriedFindings.end()));
         std::sort(allFindings.begin(), allFindings.end(),
                   [](const Finding &lhs, const Finding &rhs) {
@@ -880,8 +918,8 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
 
     if (verbose) {
         llvm::errs() << "[verbose] Analysis completed in " << elapsed << " ms, "
-                     << result.findings.size() << " finding(s), tool exit "
-                     << worstExitCode << "\n";
+                     << result.findings.size() << " finding(s), tool exit " << worstExitCode
+                     << "\n";
     }
 
     (void)registry;
@@ -955,8 +993,7 @@ int main(int argc, const char **argv) {
             if (RunStore::save(result, savedPath)) {
                 savedRun = true;
             } else {
-                llvm::errs() << "Warning: failed to persist run to " << savedPath.string()
-                             << "\n";
+                llvm::errs() << "Warning: failed to persist run to " << savedPath.string() << "\n";
             }
         }
 
@@ -975,7 +1012,6 @@ int main(int argc, const char **argv) {
             std::cout << "Run saved to " << savedPath.string() << "\n";
         }
         return exitCode;
-
     }
     if (command == "fix") {
         // Call setupParser first so that cl::opt values (including --run-id,
@@ -994,8 +1030,8 @@ int main(int argc, const char **argv) {
             auto runPath = RunStore::defaultPathFor(RunId.getValue());
             auto loaded = RunStore::load(runPath);
             if (!loaded) {
-                llvm::errs() << "Error: could not load run '" << RunId.getValue()
-                             << "' from " << runPath.string() << "\n";
+                llvm::errs() << "Error: could not load run '" << RunId.getValue() << "' from "
+                             << runPath.string() << "\n";
                 return 2;
             }
             result = std::move(*loaded);
@@ -1030,8 +1066,7 @@ int main(int argc, const char **argv) {
         // `--all-safe` is a discoverable alias for `--apply` with no rule
         // filter. It also enables the per-rule summary so batch modernization
         // runs produce a useful audit trail.
-        const bool shouldApply =
-            (Apply.getValue() || AllSafe.getValue()) && !DryRun.getValue();
+        const bool shouldApply = (Apply.getValue() || AllSafe.getValue()) && !DryRun.getValue();
         if (shouldApply) {
             // Snapshot originals before applying so --verify can roll back on
             // a post-apply syntax failure. Also remember which files were
@@ -1085,9 +1120,8 @@ int main(int argc, const char **argv) {
                     rolledBack = static_cast<int>(originalContents.size());
                     applyResult.fixesApplied = 0;
                     applyResult.filesModified = 0;
-                    applyResult.errors.push_back(
-                        "verify failed; rolled back " + std::to_string(rolledBack) +
-                        " file(s)");
+                    applyResult.errors.push_back("verify failed; rolled back " +
+                                                 std::to_string(rolledBack) + " file(s)");
                 }
             }
 
@@ -1102,29 +1136,23 @@ int main(int argc, const char **argv) {
             }
 
             if (Format.getValue() == "json") {
-                std::cout << "{\n";
-                std::cout << R"(  "filesModified": )" << applyResult.filesModified << ",\n";
-                std::cout << R"(  "fixesApplied": )" << applyResult.fixesApplied << ",\n";
-                std::cout << R"(  "fixesSkipped": )" << applyResult.fixesSkipped << ",\n";
-                std::cout << "  \"byRule\": {";
-                bool first = true;
+                llvm::json::Object byRule;
                 for (const auto &[ruleId, count] : perRuleApplied) {
-                    std::cout << (first ? "\n" : ",\n");
-                    std::cout << "    \"" << ruleId << "\": " << count;
-                    first = false;
+                    byRule[ruleId] = count;
                 }
-                if (!perRuleApplied.empty()) {
-                    std::cout << "\n  ";
+                llvm::json::Array errors;
+                for (const auto &error : applyResult.errors) {
+                    errors.push_back(error);
                 }
-                std::cout << "},\n";
-                std::cout << "  \"errors\": [";
-                for (size_t index = 0; index < applyResult.errors.size(); ++index) {
-                    std::cout << "\"" << applyResult.errors[index] << "\"";
-                    if (index + 1 < applyResult.errors.size()) {
-                        std::cout << ", ";
-                    }
-                }
-                std::cout << "]\n}\n";
+                emitJson(
+                    llvm::json::Object{
+                        {"filesModified", applyResult.filesModified},
+                        {"fixesApplied", applyResult.fixesApplied},
+                        {"fixesSkipped", applyResult.fixesSkipped},
+                        {"byRule", std::move(byRule)},
+                        {"errors", std::move(errors)},
+                    },
+                    std::cout);
             } else {
                 std::cout << "Applied " << applyResult.fixesApplied << " fix(es) across "
                           << applyResult.filesModified << " file(s).\n";
@@ -1135,8 +1163,7 @@ int main(int argc, const char **argv) {
                     }
                 }
                 if (applyResult.fixesSkipped > 0) {
-                    std::cout << "Skipped " << applyResult.fixesSkipped
-                              << " non-safe fix(es).\n";
+                    std::cout << "Skipped " << applyResult.fixesSkipped << " non-safe fix(es).\n";
                 }
                 for (const auto &error : applyResult.errors) {
                     std::cerr << "Error: " << error << "\n";
@@ -1156,25 +1183,22 @@ int main(int argc, const char **argv) {
             FixApplicator::preview(fixableFindings, std::cout);
         }
         return 0;
-
     }
     if (command == "rules") {
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
-            std::cout << "[\n";
+            llvm::json::Array rulesArray;
             const auto &rules = registry.getRules();
-            for (size_t index = 0; index < rules.size(); ++index) {
-                const auto &rule = rules[index];
-                std::cout << R"(  {"id": ")" << rule->id() << R"(", "title": ")" << rule->title()
-                          << R"(", "category": ")" << rule->category() << R"(", "severity": ")"
-                          << rule->defaultSeverity() << R"(", "summary": ")" << rule->summary()
-                          << "\"}";
-                if (index + 1 < rules.size()) {
-                    std::cout << ",";
-                }
-                std::cout << "\n";
+            for (const auto &rule : rules) {
+                rulesArray.push_back(llvm::json::Object{
+                    {"id", rule->id()},
+                    {"title", rule->title()},
+                    {"category", rule->category()},
+                    {"severity", rule->defaultSeverity()},
+                    {"summary", rule->summary()},
+                });
             }
-            std::cout << "]\n";
+            emitJson(std::move(rulesArray), std::cout);
         } else {
             for (const auto &rule : registry.getRules()) {
                 std::cout << rule->id() << " - " << rule->title() << " [" << rule->category()
@@ -1183,7 +1207,6 @@ int main(int argc, const char **argv) {
             }
         }
         return 0;
-
     }
     if (command == "doctor") {
         bool healthy = true;
@@ -1192,12 +1215,13 @@ int main(int argc, const char **argv) {
 
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
-            std::cout << "{\n";
-            std::cout << "  \"rulesRegistered\": " << registry.getRules().size() << ",\n";
-            std::cout << "  \"compilationDatabase\": " << (compilationDb ? "true" : "false")
-                      << ",\n";
-            std::cout << "  \"healthy\": " << (healthy ? "true" : "false") << "\n";
-            std::cout << "}\n";
+            emitJson(
+                llvm::json::Object{
+                    {"rulesRegistered", static_cast<int64_t>(registry.getRules().size())},
+                    {"compilationDatabase", static_cast<bool>(compilationDb)},
+                    {"healthy", healthy},
+                },
+                std::cout);
         } else {
             std::cout << "ASTHarbor Doctor\n";
             std::cout << "  Rules registered: " << registry.getRules().size() << "\n";
@@ -1210,7 +1234,6 @@ int main(int argc, const char **argv) {
             std::cout << "  Status: " << (healthy ? "OK" : "UNHEALTHY") << "\n";
         }
         return healthy ? 0 : 1;
-
     }
     if (command == "compare") {
         if (argc < 3) {
@@ -1247,17 +1270,19 @@ int main(int argc, const char **argv) {
         auto runCompiler = [&](const std::string &compiler) -> CompilerReport {
             CompilerReport report;
             std::string langFlag = isCxx ? "-xc++" : "-xc";
-            std::string command = compiler + " " + langFlag +
-                                   " -fsyntax-only -Wall -Wextra \"" + sourceFile +
-                                   "\" 2>&1";
-            FILE *pipe = popen(command.c_str(), "r");
-            if (pipe == nullptr) {
+            auto outputPath = temporaryOutputPath("astharbor-compare");
+            auto outputPathString = outputPath.string();
+            std::array<std::optional<llvm::StringRef>, 3> redirects = {
+                llvm::StringRef(""), llvm::StringRef(""), llvm::StringRef(outputPathString)};
+            auto exitCode = executeProgram(
+                compiler, {langFlag, "-fsyntax-only", "-Wall", "-Wextra", sourceFile}, redirects);
+            if (!exitCode) {
                 return report;
             }
             std::regex codeRegex(R"(\[-W([^\]]+)\])");
-            char buffer[4096];
-            while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                std::string line = buffer;
+            std::ifstream diagnostics(outputPath);
+            std::string line;
+            while (std::getline(diagnostics, line)) {
                 bool isWarning = line.contains("warning:");
                 bool isError = line.contains("error:");
                 if (!isWarning && !isError) {
@@ -1273,8 +1298,9 @@ int main(int argc, const char **argv) {
                     report.codes.insert(match[1].str());
                 }
             }
-            int status = pclose(pipe);
-            report.exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            std::error_code removeEc;
+            std::filesystem::remove(outputPath, removeEc);
+            report.exitCode = *exitCode;
             return report;
         };
 
@@ -1302,14 +1328,15 @@ int main(int argc, const char **argv) {
                 size_t start = 0;
                 while (start < value.size()) {
                     size_t comma = value.find(',', start);
-                    std::string token =
-                        value.substr(start, comma == std::string::npos ? std::string::npos
-                                                                        : comma - start);
+                    std::string token = value.substr(
+                        start, comma == std::string::npos ? std::string::npos : comma - start);
                     // Trim whitespace.
-                    while (!token.empty() && std::isspace(static_cast<unsigned char>(token.front()))) {
+                    while (!token.empty() &&
+                           std::isspace(static_cast<unsigned char>(token.front()))) {
                         token.erase(token.begin());
                     }
-                    while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back()))) {
+                    while (!token.empty() &&
+                           std::isspace(static_cast<unsigned char>(token.back()))) {
                         token.pop_back();
                     }
                     if (!token.empty()) {
@@ -1329,14 +1356,6 @@ int main(int argc, const char **argv) {
             reports.emplace_back(compiler, runCompiler(compiler));
         }
 
-        // Compute pairwise code diffs against the first available compiler
-        // so the text output can still highlight "compiler X has a finding
-        // Y that others don't".
-        std::set<std::string> unionCodes;
-        for (const auto &[_, report] : reports) {
-            unionCodes.insert(report.codes.begin(), report.codes.end());
-        }
-
         bool agree = true;
         int baselineExit = -999;
         for (const auto &[name, report] : reports) {
@@ -1353,45 +1372,22 @@ int main(int argc, const char **argv) {
             }
         }
 
-        auto joinCodes = [](const std::vector<std::string> &codes) {
-            std::string result;
-            for (size_t i = 0; i < codes.size(); ++i) {
-                if (i > 0) {
-                    result += "\", \"";
-                }
-                result += codes[i];
-            }
-            return result;
-        };
-
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
-            auto emitReport = [](const std::string &name, const CompilerReport &report) {
-                std::cout << R"(  ")" << name << R"(": {)"
-                          << R"("available": )" << (report.exitCode >= 0 ? "true" : "false")
-                          << R"(, "exit": )" << report.exitCode
-                          << R"(, "errors": )" << report.errorCount
-                          << R"(, "warnings": )" << report.warningCount
-                          << R"(, "codes": [)";
-                bool first = true;
+            llvm::json::Object compilersJson;
+            for (const auto &[name, report] : reports) {
+                llvm::json::Array codes;
                 for (const auto &code : report.codes) {
-                    std::cout << (first ? "\"" : ", \"") << code << "\"";
-                    first = false;
+                    codes.push_back(code);
                 }
-                std::cout << "]}";
-            };
-            std::cout << "{\n";
-            std::cout << R"(  "file": ")" << sourceFile << "\",\n";
-            std::cout << R"(  "compilers": {)" << "\n";
-            for (size_t i = 0; i < reports.size(); ++i) {
-                emitReport(reports[i].first, reports[i].second);
-                std::cout << (i + 1 < reports.size() ? ",\n" : "\n");
+                compilersJson[name] = llvm::json::Object{
+                    {"available", report.exitCode >= 0}, {"exit", report.exitCode},
+                    {"errors", report.errorCount},       {"warnings", report.warningCount},
+                    {"codes", std::move(codes)},
+                };
             }
-            std::cout << "  },\n";
-            // Per-compiler unique-code sets.
-            std::cout << R"(  "uniqueCodes": {)" << "\n";
-            for (size_t i = 0; i < reports.size(); ++i) {
-                const auto &[name, report] = reports[i];
+            llvm::json::Object uniqueCodesJson;
+            for (const auto &[name, report] : reports) {
                 std::vector<std::string> unique;
                 for (const auto &code : report.codes) {
                     bool seenElsewhere = false;
@@ -1408,15 +1404,22 @@ int main(int argc, const char **argv) {
                         unique.push_back(code);
                     }
                 }
-                std::cout << R"(    ")" << name << R"(": [)";
+                llvm::json::Array uniqueArray;
                 if (!unique.empty()) {
-                    std::cout << "\"" << joinCodes(unique) << "\"";
+                    for (const auto &code : unique) {
+                        uniqueArray.push_back(code);
+                    }
                 }
-                std::cout << "]" << (i + 1 < reports.size() ? ",\n" : "\n");
+                uniqueCodesJson[name] = std::move(uniqueArray);
             }
-            std::cout << "  },\n";
-            std::cout << R"(  "agreement": )" << (agree ? "true" : "false") << "\n";
-            std::cout << "}\n";
+            emitJson(
+                llvm::json::Object{
+                    {"file", sourceFile},
+                    {"compilers", std::move(compilersJson)},
+                    {"uniqueCodes", std::move(uniqueCodesJson)},
+                    {"agreement", agree},
+                },
+                std::cout);
         } else {
             auto printReport = [](const std::string &label, const CompilerReport &report) {
                 std::cout << "  " << label;
@@ -1424,8 +1427,7 @@ int main(int argc, const char **argv) {
                     std::cout << " not available\n";
                     return;
                 }
-                std::cout << " exit=" << report.exitCode
-                          << ", errors=" << report.errorCount
+                std::cout << " exit=" << report.exitCode << ", errors=" << report.errorCount
                           << ", warnings=" << report.warningCount;
                 if (!report.codes.empty()) {
                     std::cout << " [";
@@ -1478,8 +1480,7 @@ int main(int argc, const char **argv) {
                         std::cout << "\n";
                     }
                 }
-                std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ")
-                          << "\n";
+                std::cout << "  Agreement: " << (agree ? "YES" : "NO — compilers differ") << "\n";
             }
         }
         return 0;
@@ -1561,13 +1562,15 @@ int main(int argc, const char **argv) {
         }
         std::string formatValue = extractFormat(argc, argv);
         if (formatValue == "json") {
-            std::cout << "{\n";
-            std::cout << R"(  "id": ")" << found->id() << "\",\n";
-            std::cout << R"(  "title": ")" << found->title() << "\",\n";
-            std::cout << R"(  "category": ")" << found->category() << "\",\n";
-            std::cout << R"(  "severity": ")" << found->defaultSeverity() << "\",\n";
-            std::cout << R"(  "summary": ")" << found->summary() << "\"\n";
-            std::cout << "}\n";
+            emitJson(
+                llvm::json::Object{
+                    {"id", found->id()},
+                    {"title", found->title()},
+                    {"category", found->category()},
+                    {"severity", found->defaultSeverity()},
+                    {"summary", found->summary()},
+                },
+                std::cout);
         } else {
             std::cout << found->id() << "\n";
             std::cout << std::string(found->id().size(), '=') << "\n\n";
