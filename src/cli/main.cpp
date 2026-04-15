@@ -351,26 +351,6 @@ executeProgram(const std::string &programName, const std::vector<std::string> &a
     return exitCode;
 }
 
-static std::optional<std::string> captureFirstLine(const char *command) {
-    FILE *pipe = popen(command, "r");
-    if (pipe == nullptr) {
-        return std::nullopt;
-    }
-    char buffer[4096];
-    std::string line;
-    if (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        line = buffer;
-        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-            line.pop_back();
-        }
-    }
-    int status = pclose(pipe);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || line.empty()) {
-        return std::nullopt;
-    }
-    return line;
-}
-
 static std::filesystem::path temporaryOutputPath(const std::string &prefix) {
     std::error_code ec;
     auto directory = std::filesystem::temp_directory_path(ec);
@@ -446,6 +426,26 @@ static std::vector<std::string> filterByChangedFiles(const std::vector<std::stri
 }
 
 #ifdef __APPLE__
+static std::optional<std::string> captureFirstLine(const char *command) {
+    FILE *pipe = popen(command, "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+    char buffer[4096];
+    std::string line;
+    if (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        line = buffer;
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+    }
+    int status = pclose(pipe);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || line.empty()) {
+        return std::nullopt;
+    }
+    return line;
+}
+
 static std::vector<std::string> darwinToolchainArguments() {
     std::vector<std::string> arguments;
 
