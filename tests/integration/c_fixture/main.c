@@ -12,20 +12,16 @@ extern int atoi(const char *s);
 
 void unsafe_copy(const char *source) {
     char buffer[32];
-    strcpy(buffer, source);     /* security/no-strcpy-strcat */
+    strcpy(buffer, source); /* security/no-strcpy-strcat */
 }
 
-int parse_input(const char *text) {
-    return atoi(text);          /* security/no-atoi-atol-atof */
-}
+int parse_input(const char *text) { return atoi(text); /* security/no-atoi-atol-atof */ }
 
-int divide(int value) {
-    return value / 0;           /* ub/division-by-zero-literal */
-}
+int divide(int value) { return value / 0; /* ub/division-by-zero-literal */ }
 
 int main(void) {
     char line[16];
-    gets(line);                 /* security/no-gets */
+    gets(line); /* security/no-gets */
     unsafe_copy(line);
     return parse_input(line) + divide(1);
 }

@@ -31,39 +31,30 @@ class UbFreeOfNonHeapRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        auto freeFunc = callee(functionDecl(
-            hasAnyName("free", "::free", "std::free", "::std::free")));
-        auto anyStorageVar = varDecl(
-            anyOf(hasLocalStorage(), hasGlobalStorage()));
-        auto addressOfVar = unaryOperator(
-            hasOperatorName("&"),
-            hasUnaryOperand(ignoringParenImpCasts(
-                declRefExpr(to(anyStorageVar.bind("target_var"))))));
-        auto arrayDecayVar = declRefExpr(to(
-            varDecl(anyOf(hasLocalStorage(), hasGlobalStorage()),
-                     hasType(arrayType()))
-                .bind("target_var")));
+        auto freeFunc =
+            callee(functionDecl(hasAnyName("free", "::free", "std::free", "::std::free")));
+        auto anyStorageVar = varDecl(anyOf(hasLocalStorage(), hasGlobalStorage()));
+        auto addressOfVar = unaryOperator(hasOperatorName("&"),
+                                          hasUnaryOperand(ignoringParenImpCasts(
+                                              declRefExpr(to(anyStorageVar.bind("target_var"))))));
+        auto arrayDecayVar = declRefExpr(
+            to(varDecl(anyOf(hasLocalStorage(), hasGlobalStorage()), hasType(arrayType()))
+                   .bind("target_var")));
 
         // Shape 1+2: free(&local) / free(&static)
-        Finder.addMatcher(
-            callExpr(freeFunc,
-                     hasArgument(0, ignoringParenImpCasts(addressOfVar)))
-                .bind("free_call"),
-            this);
+        Finder.addMatcher(callExpr(freeFunc, hasArgument(0, ignoringParenImpCasts(addressOfVar)))
+                              .bind("free_call"),
+                          this);
         // Shape 3+4: free(local_array) / free(static_array) — array decay
-        Finder.addMatcher(
-            callExpr(freeFunc,
-                     hasArgument(0, ignoringParenImpCasts(arrayDecayVar)))
-                .bind("free_call"),
-            this);
+        Finder.addMatcher(callExpr(freeFunc, hasArgument(0, ignoringParenImpCasts(arrayDecayVar)))
+                              .bind("free_call"),
+                          this);
         // Shape 5: free("literal") / free((void*)"literal") — the user
         // typically writes a C-style cast to void* around the literal,
         // so `hasDescendant` looks through any cast chain to find the
         // underlying string literal.
         Finder.addMatcher(
-            callExpr(freeFunc,
-                     hasArgument(0, hasDescendant(
-                                        stringLiteral().bind("string_lit"))))
+            callExpr(freeFunc, hasArgument(0, hasDescendant(stringLiteral().bind("string_lit"))))
                 .bind("free_call"),
             this);
     }
@@ -81,10 +72,9 @@ class UbFreeOfNonHeapRule : public Rule {
 
         std::string description;
         if (TargetVar != nullptr) {
-            const char *storage =
-                TargetVar->hasLocalStorage() ? "stack" : "global/static";
-            description = "free() called on " + std::string(storage) +
-                          " variable '" + TargetVar->getNameAsString() +
+            const char *storage = TargetVar->hasLocalStorage() ? "stack" : "global/static";
+            description = "free() called on " + std::string(storage) + " variable '" +
+                          TargetVar->getNameAsString() +
                           "' — not heap-allocated, undefined behavior";
         } else if (StringLit != nullptr) {
             description = "free() called on a string literal — not "

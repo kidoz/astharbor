@@ -30,8 +30,7 @@ class UbUninitializedLocalRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             varDecl(hasLocalStorage(), unless(hasInitializer(expr())),
-                    hasType(qualType(anyOf(isInteger(), realFloatingPointType(),
-                                            pointerType()))),
+                    hasType(qualType(anyOf(isInteger(), realFloatingPointType(), pointerType()))),
                     hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
                 .bind("uninit_var"),
             this);
@@ -47,8 +46,7 @@ class UbUninitializedLocalRule : public Rule {
         // Static and thread-local locals are zero-initialized; record
         // types may have default constructors; arrays are initialized
         // elsewhere. None of these are in scope for this rule.
-        if (UninitVar->isStaticLocal() ||
-            UninitVar->getTLSKind() != clang::VarDecl::TLS_None) {
+        if (UninitVar->isStaticLocal() || UninitVar->getTLSKind() != clang::VarDecl::TLS_None) {
             return;
         }
         clang::QualType type = UninitVar->getType();
@@ -71,9 +69,7 @@ class UbUninitializedLocalRule : public Rule {
 
         auto reportLoc = cfg::forwardReachable(
             start->first, start->second + 1,
-            [&](const clang::Stmt *stmt) {
-                return containsWriteTo(stmt, UninitVar);
-            },
+            [&](const clang::Stmt *stmt) { return containsWriteTo(stmt, UninitVar); },
             [&](const clang::Stmt *stmt) {
                 return findRead(stmt, UninitVar).value_or(clang::SourceLocation{});
             });
@@ -93,8 +89,7 @@ class UbUninitializedLocalRule : public Rule {
     /// address-of case is treated as a write because once a callee holds
     /// the pointer, we can no longer reason locally about whether the
     /// variable has been initialized.
-    static bool containsWriteTo(const clang::Stmt *stmt,
-                                 const clang::VarDecl *targetVar) {
+    static bool containsWriteTo(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
         if (stmt == nullptr) {
             return false;
         }
@@ -118,8 +113,8 @@ class UbUninitializedLocalRule : public Rule {
     /// the LHS of an assignment to it. The enclosing BFS has already
     /// filtered out statements containing any write to the variable, so
     /// a surviving DeclRefExpr on this path is a read before any write.
-    static std::optional<clang::SourceLocation>
-    findRead(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
+    static std::optional<clang::SourceLocation> findRead(const clang::Stmt *stmt,
+                                                         const clang::VarDecl *targetVar) {
         if (stmt == nullptr) {
             return std::nullopt;
         }

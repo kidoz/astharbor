@@ -17,16 +17,14 @@ class ReadabilityContainerSizeEmptyRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
 
-        auto sizeCall =
-            cxxMemberCallExpr(callee(cxxMethodDecl(hasName("size")))).bind("size_call");
+        auto sizeCall = cxxMemberCallExpr(callee(cxxMethodDecl(hasName("size")))).bind("size_call");
         auto zeroLiteral = integerLiteral(equals(0));
 
-        Finder.addMatcher(
-            binaryOperator(hasAnyOperatorName("==", "!=", ">", "<", ">=", "<="),
-                           hasEitherOperand(ignoringParenImpCasts(sizeCall)),
-                           hasEitherOperand(ignoringParenImpCasts(zeroLiteral)))
-                .bind("op"),
-            this);
+        Finder.addMatcher(binaryOperator(hasAnyOperatorName("==", "!=", ">", "<", ">=", "<="),
+                                         hasEitherOperand(ignoringParenImpCasts(sizeCall)),
+                                         hasEitherOperand(ignoringParenImpCasts(zeroLiteral)))
+                              .bind("op"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -86,22 +84,19 @@ class ReadabilityContainerSizeEmptyRule : public Rule {
         // For pointer-like objects (`->size()`), the implicit object is a
         // dereference and the source range covers just the pointer expression.
         // Pick the appropriate member-access operator.
-        bool isPointerAccess = Call->getImplicitObjectArgument()
-                                   ->IgnoreParenImpCasts()
-                                   ->getType()
-                                   ->isPointerType();
+        bool isPointerAccess =
+            Call->getImplicitObjectArgument()->IgnoreParenImpCasts()->getType()->isPointerType();
         std::string accessor = isPointerAccess ? "->" : ".";
 
-        std::string replacement = (wantNegation.value() ? "!" : "") + objectText.str() +
-                                  accessor + "empty()";
+        std::string replacement =
+            (wantNegation.value() ? "!" : "") + objectText.str() + accessor + "empty()";
 
         // Compute the source range of the full binary expression to replace.
         auto beginLoc = sourceManager.getExpansionLoc(Op->getBeginLoc());
         auto endLoc = sourceManager.getExpansionLoc(Op->getEndLoc());
         unsigned beginOffset = sourceManager.getFileOffset(beginLoc);
         unsigned endOffset = sourceManager.getFileOffset(endLoc);
-        unsigned endTokenLength =
-            clang::Lexer::MeasureTokenLength(endLoc, sourceManager, langOpts);
+        unsigned endTokenLength = clang::Lexer::MeasureTokenLength(endLoc, sourceManager, langOpts);
         unsigned totalLength = endOffset + endTokenLength - beginOffset;
 
         Fix fix;
@@ -134,8 +129,8 @@ class ReadabilityContainerSizeEmptyRule : public Rule {
     /// Return true if the comparison should be replaced by `!empty()`,
     /// false for `empty()`, or nullopt if the comparison is trivially
     /// true/false and shouldn't be auto-fixed.
-    static std::optional<bool>
-    classifyComparison(clang::BinaryOperator::Opcode opcode, bool sizeIsLhs) {
+    static std::optional<bool> classifyComparison(clang::BinaryOperator::Opcode opcode,
+                                                  bool sizeIsLhs) {
         using Opc = clang::BinaryOperatorKind;
         // Canonicalise: if size() is on the RHS, flip the comparison.
         if (!sizeIsLhs) {
@@ -158,14 +153,14 @@ class ReadabilityContainerSizeEmptyRule : public Rule {
         }
 
         switch (opcode) {
-        case Opc::BO_EQ: // size() == 0
-        case Opc::BO_LE: // size() <= 0  (effectively == 0 for unsigned)
+        case Opc::BO_EQ:  // size() == 0
+        case Opc::BO_LE:  // size() <= 0  (effectively == 0 for unsigned)
             return false; // → empty()
-        case Opc::BO_NE: // size() != 0
-        case Opc::BO_GT: // size() > 0
-            return true; // → !empty()
-        case Opc::BO_GE: // size() >= 0 — always true; don't fix
-        case Opc::BO_LT: // size() < 0  — always false; don't fix
+        case Opc::BO_NE:  // size() != 0
+        case Opc::BO_GT:  // size() > 0
+            return true;  // → !empty()
+        case Opc::BO_GE:  // size() >= 0 — always true; don't fix
+        case Opc::BO_LT:  // size() < 0  — always false; don't fix
         default:
             return std::nullopt;
         }

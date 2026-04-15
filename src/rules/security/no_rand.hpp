@@ -8,17 +8,16 @@ class SecurityNoRandRule : public Rule {
     std::string title() const override { return "No rand()"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects calls to rand(), srand(), and random() which are cryptographically weak PRNGs.";
+        return "Detects calls to rand(), srand(), and random() which are cryptographically weak "
+               "PRNGs.";
     }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "rand", "srand", "random",
-                         "::rand", "::srand", "::random",
-                         "std::rand", "std::srand"))))
+            callExpr(callee(functionDecl(hasAnyName("rand", "srand", "random", "::rand", "::srand",
+                                                    "::random", "std::rand", "std::srand"))))
                 .bind("rand_call"),
             this);
     }

@@ -36,9 +36,10 @@ class BestPracticeNoRawNewDeleteRule : public Rule {
             if (isInSystemHeader(NewExpr->getBeginLoc(), *Result.SourceManager)) {
                 return;
             }
-            emit(*NewExpr, *Result.SourceManager, "Raw 'new' expression — prefer "
-                                                   "std::make_unique/std::make_shared or a "
-                                                   "container type");
+            emit(*NewExpr, *Result.SourceManager,
+                 "Raw 'new' expression — prefer "
+                 "std::make_unique/std::make_shared or a "
+                 "container type");
             return;
         }
         if (const auto *DeleteExpr = Result.Nodes.getNodeAs<clang::CXXDeleteExpr>("delete_expr")) {

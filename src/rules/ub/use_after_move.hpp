@@ -32,10 +32,9 @@ class UbUseAfterMoveRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             callExpr(
-                callee(functionDecl(hasName("move"),
-                                     hasDeclContext(namespaceDecl(hasName("std"))))),
-                hasArgument(0, ignoringParenImpCasts(
-                                   declRefExpr(to(varDecl().bind("moved_var"))))),
+                callee(
+                    functionDecl(hasName("move"), hasDeclContext(namespaceDecl(hasName("std"))))),
+                hasArgument(0, ignoringParenImpCasts(declRefExpr(to(varDecl().bind("moved_var"))))),
                 hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
                 .bind("move_call"),
             this);
@@ -45,9 +44,8 @@ class UbUseAfterMoveRule : public Rule {
         const auto *MoveCall = Result.Nodes.getNodeAs<clang::CallExpr>("move_call");
         const auto *MovedVar = Result.Nodes.getNodeAs<clang::VarDecl>("moved_var");
         const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
-        if (MoveCall == nullptr || MovedVar == nullptr || Func == nullptr ||
-            !Func->hasBody() || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        if (MoveCall == nullptr || MovedVar == nullptr || Func == nullptr || !Func->hasBody() ||
+            Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (!MovedVar->hasLocalStorage()) {
@@ -69,12 +67,9 @@ class UbUseAfterMoveRule : public Rule {
 
         auto reportLoc = cfg::forwardReachable(
             start->first, start->second + 1,
+            [&](const clang::Stmt *stmt) { return cfg::isAssignmentTo(stmt, MovedVar); },
             [&](const clang::Stmt *stmt) {
-                return cfg::isAssignmentTo(stmt, MovedVar);
-            },
-            [&](const clang::Stmt *stmt) {
-                return findUseLocation(stmt, MovedVar, MoveCall)
-                    .value_or(clang::SourceLocation{});
+                return findUseLocation(stmt, MovedVar, MoveCall).value_or(clang::SourceLocation{});
             });
 
         if (!reportLoc || reportLoc->isInvalid()) {

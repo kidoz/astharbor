@@ -18,9 +18,8 @@ class SecurityUnsafePrintfFormatRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             callExpr(callee(functionDecl(hasAnyName(
-                         "printf", "fprintf", "sprintf", "snprintf", "dprintf",
-                         "wprintf", "fwprintf", "swprintf",
-                         "::printf", "::fprintf", "::sprintf", "::snprintf",
+                         "printf", "fprintf", "sprintf", "snprintf", "dprintf", "wprintf",
+                         "fwprintf", "swprintf", "::printf", "::fprintf", "::sprintf", "::snprintf",
                          "std::printf", "std::fprintf", "std::sprintf", "std::snprintf"))))
                 .bind("printf_call"),
             this);
@@ -51,7 +50,8 @@ class SecurityUnsafePrintfFormatRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = "Format string is not a string literal — this may allow format string injection (CWE-134)";
+        finding.message = "Format string is not a string literal — this may allow format string "
+                          "injection (CWE-134)";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Call->getExprLoc()).str();

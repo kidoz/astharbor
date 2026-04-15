@@ -25,8 +25,7 @@ class ReadabilityUseUsingAliasRule : public Rule {
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *Typedef = Result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
-        if (Typedef == nullptr || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        if (Typedef == nullptr || Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (isInSystemHeader(Typedef->getLocation(), *Result.SourceManager)) {
@@ -88,8 +87,7 @@ class ReadabilityUseUsingAliasRule : public Rule {
 
         unsigned beginOffset = sourceManager.getFileOffset(beginLoc);
         unsigned endOffset = sourceManager.getFileOffset(endLoc);
-        unsigned endTokenLength =
-            clang::Lexer::MeasureTokenLength(endLoc, sourceManager, langOpts);
+        unsigned endTokenLength = clang::Lexer::MeasureTokenLength(endLoc, sourceManager, langOpts);
         unsigned totalLength = endOffset + endTokenLength - beginOffset;
 
         Fix fix;

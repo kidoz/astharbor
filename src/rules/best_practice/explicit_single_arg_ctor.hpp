@@ -20,11 +20,11 @@ class BestPracticeExplicitSingleArgCtorRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            cxxConstructorDecl(parameterCountIs(1), unless(isExplicit()), unless(isImplicit()),
-                               unless(isDeleted()), unless(isDefaulted()))
-                .bind("ctor"),
-            this);
+        Finder.addMatcher(cxxConstructorDecl(parameterCountIs(1), unless(isExplicit()),
+                                             unless(isImplicit()), unless(isDeleted()),
+                                             unless(isDefaulted()))
+                              .bind("ctor"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -38,9 +38,8 @@ class BestPracticeExplicitSingleArgCtorRule : public Rule {
 
         auto &sourceManager = *Result.SourceManager;
         auto finding = makeFinding(Ctor->getLocation(), sourceManager,
-                                    "Single-argument constructor '" +
-                                        Ctor->getNameAsString() +
-                                        "' should be marked 'explicit'");
+                                   "Single-argument constructor '" + Ctor->getNameAsString() +
+                                       "' should be marked 'explicit'");
         if (!finding) {
             return;
         }

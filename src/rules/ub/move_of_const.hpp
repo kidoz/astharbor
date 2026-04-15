@@ -24,7 +24,7 @@ class UbMoveOfConstRule : public Rule {
         // `std` namespace to cover all spellings.
         Finder.addMatcher(
             callExpr(callee(functionDecl(hasName("move"),
-                                          hasDeclContext(namespaceDecl(hasName("std"))))),
+                                         hasDeclContext(namespaceDecl(hasName("std"))))),
                      hasArgument(0, expr().bind("arg")))
                 .bind("move_call"),
             this);

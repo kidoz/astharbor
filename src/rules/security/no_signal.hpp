@@ -8,15 +8,15 @@ class SecurityNoSignalRule : public Rule {
     std::string title() const override { return "No signal()"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects calls to signal() which has race-condition and portability issues — use sigaction() instead.";
+        return "Detects calls to signal() which has race-condition and portability issues — use "
+               "sigaction() instead.";
     }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName("signal", "::signal"))))
-                .bind("signal_call"),
+            callExpr(callee(functionDecl(hasAnyName("signal", "::signal")))).bind("signal_call"),
             this);
     }
 

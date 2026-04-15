@@ -39,10 +39,9 @@ struct Config {
 
 // MappingTraits specialization must appear before Config::load() is defined
 // so the llvm::yaml machinery can find it during template instantiation.
-template <>
-struct llvm::yaml::CustomMappingTraits<std::map<std::string, std::string>> {
+template <> struct llvm::yaml::CustomMappingTraits<std::map<std::string, std::string>> {
     static void inputOne(llvm::yaml::IO &io, llvm::StringRef key,
-                          std::map<std::string, std::string> &map) {
+                         std::map<std::string, std::string> &map) {
         io.mapRequired(key.str().c_str(), map[key.str()]);
     }
     static void output(llvm::yaml::IO &io, std::map<std::string, std::string> &map) {
@@ -67,8 +66,7 @@ namespace astharbor {
 
 /// Walk up from `start` toward the root, looking for `.astharbor.yml`.
 /// Returns the path of the first match, or nullopt if none found.
-inline std::optional<std::filesystem::path>
-discoverConfig(const std::filesystem::path &start) {
+inline std::optional<std::filesystem::path> discoverConfig(const std::filesystem::path &start) {
     std::error_code ec;
     auto current = std::filesystem::absolute(start, ec);
     if (ec) {

@@ -35,29 +35,25 @@ class UbNullDerefAfterCheckRule : public Rule {
         // never matched. The null constant can be `nullptr`, a literal
         // `0`, or Clang's gnu null expression (the internal form of
         // `NULL` when the platform defines it as __null).
-        auto pointerVarRef = ignoringParenImpCasts(declRefExpr(
-            to(varDecl(hasLocalStorage(), hasType(pointerType())).bind("null_var"))));
+        auto pointerVarRef = ignoringParenImpCasts(
+            declRefExpr(to(varDecl(hasLocalStorage(), hasType(pointerType())).bind("null_var"))));
         auto nullConstant = ignoringParenImpCasts(
-            anyOf(cxxNullPtrLiteralExpr(), integerLiteral(equals(0)),
-                  gnuNullExpr()));
-        auto equalityCheck = binaryOperator(
-            hasOperatorName("=="), hasOperands(pointerVarRef, nullConstant));
-        auto notCheck =
-            unaryOperator(hasOperatorName("!"), hasUnaryOperand(pointerVarRef));
-        Finder.addMatcher(
-            ifStmt(hasCondition(anyOf(equalityCheck, notCheck)),
-                   hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
-                .bind("null_check_if"),
-            this);
+            anyOf(cxxNullPtrLiteralExpr(), integerLiteral(equals(0)), gnuNullExpr()));
+        auto equalityCheck =
+            binaryOperator(hasOperatorName("=="), hasOperands(pointerVarRef, nullConstant));
+        auto notCheck = unaryOperator(hasOperatorName("!"), hasUnaryOperand(pointerVarRef));
+        Finder.addMatcher(ifStmt(hasCondition(anyOf(equalityCheck, notCheck)),
+                                 hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
+                              .bind("null_check_if"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *IfNode = Result.Nodes.getNodeAs<clang::IfStmt>("null_check_if");
         const auto *NullVar = Result.Nodes.getNodeAs<clang::VarDecl>("null_var");
         const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
-        if (IfNode == nullptr || NullVar == nullptr || Func == nullptr ||
-            !Func->hasBody() || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        if (IfNode == nullptr || NullVar == nullptr || Func == nullptr || !Func->hasBody() ||
+            Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (isInSystemHeader(IfNode->getIfLoc(), *Result.SourceManager)) {
@@ -74,17 +70,14 @@ class UbNullDerefAfterCheckRule : public Rule {
         }
         // CFGBlock::succs() yields [then-block, else-block] for an
         // if-terminator; the then-block is where the pointer is null.
-        const clang::CFGBlock *thenBlock =
-            ifBlock->succ_begin()->getReachableBlock();
+        const clang::CFGBlock *thenBlock = ifBlock->succ_begin()->getReachableBlock();
         if (thenBlock == nullptr) {
             return;
         }
 
         auto reportLoc = cfg::forwardReachable(
             thenBlock, 0,
-            [&](const clang::Stmt *stmt) {
-                return cfg::isAssignmentTo(stmt, NullVar);
-            },
+            [&](const clang::Stmt *stmt) { return cfg::isAssignmentTo(stmt, NullVar); },
             [&](const clang::Stmt *stmt) {
                 if (const auto *deref = findDereference(stmt, NullVar)) {
                     return deref->getBeginLoc();
@@ -106,23 +99,20 @@ class UbNullDerefAfterCheckRule : public Rule {
     /// of these three shapes: `targetVar->field` (arrow member access),
     /// `*targetVar` (unary deref), or `targetVar[i]` (array subscript).
     static const clang::Stmt *findDereference(const clang::Stmt *stmt,
-                                                const clang::VarDecl *targetVar) {
-        return cfg::findFirstDescendantIf(
-            stmt, [targetVar](const clang::Stmt *node) {
-                if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(node)) {
-                    return member->isArrow() &&
-                           cfg::isDirectRefTo(member->getBase(), targetVar);
-                }
-                if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(node)) {
-                    return unary->getOpcode() == clang::UO_Deref &&
-                           cfg::isDirectRefTo(unary->getSubExpr(), targetVar);
-                }
-                if (const auto *subscript =
-                        llvm::dyn_cast<clang::ArraySubscriptExpr>(node)) {
-                    return cfg::isDirectRefTo(subscript->getBase(), targetVar);
-                }
-                return false;
-            });
+                                              const clang::VarDecl *targetVar) {
+        return cfg::findFirstDescendantIf(stmt, [targetVar](const clang::Stmt *node) {
+            if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(node)) {
+                return member->isArrow() && cfg::isDirectRefTo(member->getBase(), targetVar);
+            }
+            if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(node)) {
+                return unary->getOpcode() == clang::UO_Deref &&
+                       cfg::isDirectRefTo(unary->getSubExpr(), targetVar);
+            }
+            if (const auto *subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(node)) {
+                return cfg::isDirectRefTo(subscript->getBase(), targetVar);
+            }
+            return false;
+        });
     }
 };
 

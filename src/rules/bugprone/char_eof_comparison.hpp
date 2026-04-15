@@ -29,9 +29,7 @@ namespace astharbor {
 class BugproneCharEofComparisonRule : public Rule {
   public:
     std::string id() const override { return "bugprone/char-eof-comparison"; }
-    std::string title() const override {
-        return "getchar/getc/fgetc return narrowed to char";
-    }
+    std::string title() const override { return "getchar/getc/fgetc return narrowed to char"; }
     std::string category() const override { return "bugprone"; }
     std::string summary() const override {
         return "Assigning the return value of getchar()/getc()/fgetc() to a char "
@@ -45,10 +43,9 @@ class BugproneCharEofComparisonRule : public Rule {
             implicitCastExpr(
                 hasType(isAnyCharacter()),
                 hasSourceExpression(ignoringParenImpCasts(
-                    callExpr(callee(functionDecl(hasAnyName(
-                                 "getchar", "getc", "fgetc",
-                                 "::getchar", "::getc", "::fgetc",
-                                 "std::getchar", "std::getc", "std::fgetc"))))
+                    callExpr(callee(functionDecl(hasAnyName("getchar", "getc", "fgetc", "::getchar",
+                                                            "::getc", "::fgetc", "std::getchar",
+                                                            "std::getc", "std::fgetc"))))
                         .bind("io_call"))))
                 .bind("narrowing_cast"),
             this);
@@ -63,8 +60,7 @@ class BugproneCharEofComparisonRule : public Rule {
             return;
         }
         const clang::FunctionDecl *callee = IoCall->getDirectCallee();
-        const std::string calleeName =
-            callee != nullptr ? callee->getNameAsString() : "getchar";
+        const std::string calleeName = callee != nullptr ? callee->getNameAsString() : "getchar";
         emitFinding(IoCall->getExprLoc(), *Result.SourceManager,
                     "Return value of '" + calleeName +
                         "()' is narrowed to a char, which loses the EOF sentinel "

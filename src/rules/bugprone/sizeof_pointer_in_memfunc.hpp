@@ -32,36 +32,31 @@ class BugproneSizeofPointerInMemfuncRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         // `memset` is owned by bugprone/suspicious-memset (see class doc).
-        auto memFunc = callee(functionDecl(hasAnyName(
-            "memcpy", "memmove", "memcmp", "bzero", "bcopy")));
+        auto memFunc =
+            callee(functionDecl(hasAnyName("memcpy", "memmove", "memcmp", "bzero", "bcopy")));
         // Match ANY variable as the buffer candidate; the real
         // pointer-vs-array decision happens in run(), which can
         // distinguish a ParmVarDecl whose declared type is an array
         // (decayed at the use site) from a local VarDecl with a
         // genuine array type.
-        auto bufferVarRef = ignoringParenImpCasts(
-            declRefExpr(to(varDecl().bind("buf_var"))));
+        auto bufferVarRef = ignoringParenImpCasts(declRefExpr(to(varDecl().bind("buf_var"))));
         // A direct variable reference under the sizeof, after
         // stripping parens and implicit casts. `sizeof(*p)`,
         // `sizeof(obj.field)`, and `sizeof(Type)` do NOT match
         // because their operand is not a bare DeclRefExpr.
         auto sizeofSameVar = unaryExprOrTypeTraitExpr(
             ofKind(clang::UETT_SizeOf),
-            has(ignoringParenImpCasts(declRefExpr(
-                to(varDecl(equalsBoundNode("buf_var")))))));
-        Finder.addMatcher(
-            callExpr(memFunc,
-                     hasAnyArgument(bufferVarRef),
-                     hasAnyArgument(ignoringParenImpCasts(sizeofSameVar)))
-                .bind("bad_call"),
-            this);
+            has(ignoringParenImpCasts(declRefExpr(to(varDecl(equalsBoundNode("buf_var")))))));
+        Finder.addMatcher(callExpr(memFunc, hasAnyArgument(bufferVarRef),
+                                   hasAnyArgument(ignoringParenImpCasts(sizeofSameVar)))
+                              .bind("bad_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *Call = Result.Nodes.getNodeAs<clang::CallExpr>("bad_call");
         const auto *BufVar = Result.Nodes.getNodeAs<clang::VarDecl>("buf_var");
-        if (Call == nullptr || BufVar == nullptr ||
-            Result.SourceManager == nullptr) {
+        if (Call == nullptr || BufVar == nullptr || Result.SourceManager == nullptr) {
             return;
         }
         if (isInSystemHeader(Call->getExprLoc(), *Result.SourceManager)) {
@@ -81,13 +76,13 @@ class BugproneSizeofPointerInMemfuncRule : public Rule {
             return;
         }
         const clang::FunctionDecl *callee = Call->getDirectCallee();
-        const std::string calleeName =
-            callee != nullptr ? callee->getNameAsString() : "mem*";
+        const std::string calleeName = callee != nullptr ? callee->getNameAsString() : "mem*";
         const std::string varName = BufVar->getNameAsString();
         emitFinding(Call->getExprLoc(), *Result.SourceManager,
                     calleeName + "(..., sizeof(" + varName +
                         ")) measures the pointer's size, not the buffer's — "
-                        "pass the actual length or sizeof(*" + varName + ")");
+                        "pass the actual length or sizeof(*" +
+                        varName + ")");
     }
 };
 

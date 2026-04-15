@@ -45,14 +45,11 @@ class UbUseAfterFreeRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             callExpr(
-                callee(functionDecl(hasAnyName("free", "::free", "std::free",
-                                                 "::std::free"))),
-                hasArgument(0, ignoringParenImpCasts(declRefExpr(to(
-                                   varDecl(hasLocalStorage(),
-                                            hasType(pointerType()))
-                                       .bind("freed_var"))))),
-                hasAncestor(
-                    functionDecl(isDefinition()).bind("enclosing_func")))
+                callee(functionDecl(hasAnyName("free", "::free", "std::free", "::std::free"))),
+                hasArgument(
+                    0, ignoringParenImpCasts(declRefExpr(to(
+                           varDecl(hasLocalStorage(), hasType(pointerType())).bind("freed_var"))))),
+                hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
                 .bind("free_call"),
             this);
     }
@@ -61,9 +58,8 @@ class UbUseAfterFreeRule : public Rule {
         const auto *FreeCall = Result.Nodes.getNodeAs<clang::CallExpr>("free_call");
         const auto *FreedVar = Result.Nodes.getNodeAs<clang::VarDecl>("freed_var");
         const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
-        if (FreeCall == nullptr || FreedVar == nullptr || Func == nullptr ||
-            !Func->hasBody() || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        if (FreeCall == nullptr || FreedVar == nullptr || Func == nullptr || !Func->hasBody() ||
+            Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (isInSystemHeader(FreeCall->getExprLoc(), *Result.SourceManager)) {
@@ -82,12 +78,9 @@ class UbUseAfterFreeRule : public Rule {
 
         auto reportLoc = cfg::forwardReachable(
             start->first, start->second + 1,
+            [&](const clang::Stmt *stmt) { return cfg::isAssignmentTo(stmt, FreedVar); },
             [&](const clang::Stmt *stmt) {
-                return cfg::isAssignmentTo(stmt, FreedVar);
-            },
-            [&](const clang::Stmt *stmt) {
-                return findUseLocation(stmt, FreedVar, FreeCall)
-                    .value_or(clang::SourceLocation{});
+                return findUseLocation(stmt, FreedVar, FreeCall).value_or(clang::SourceLocation{});
             });
 
         if (!reportLoc || reportLoc->isInvalid()) {
@@ -107,23 +100,20 @@ class UbUseAfterFreeRule : public Rule {
     static std::optional<clang::SourceLocation>
     findUseLocation(const clang::Stmt *stmt, const clang::VarDecl *targetVar,
                     const clang::CallExpr *excludedCall) {
-        const clang::Stmt *found = cfg::findFirstDescendantIf(
-            stmt, [targetVar, excludedCall](const clang::Stmt *node) {
+        const clang::Stmt *found =
+            cfg::findFirstDescendantIf(stmt, [targetVar, excludedCall](const clang::Stmt *node) {
                 if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(node);
                     member != nullptr && member->isArrow() &&
                     cfg::isDirectRefTo(member->getBase(), targetVar)) {
                     return true;
                 }
-                if (const auto *unary =
-                        llvm::dyn_cast<clang::UnaryOperator>(node);
+                if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(node);
                     unary != nullptr && unary->getOpcode() == clang::UO_Deref &&
                     cfg::isDirectRefTo(unary->getSubExpr(), targetVar)) {
                     return true;
                 }
-                if (const auto *subscript =
-                        llvm::dyn_cast<clang::ArraySubscriptExpr>(node);
-                    subscript != nullptr &&
-                    cfg::isDirectRefTo(subscript->getBase(), targetVar)) {
+                if (const auto *subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(node);
+                    subscript != nullptr && cfg::isDirectRefTo(subscript->getBase(), targetVar)) {
                     return true;
                 }
                 if (const auto *call = llvm::dyn_cast<clang::CallExpr>(node);

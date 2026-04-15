@@ -21,8 +21,7 @@ class UbNoreturnFunctionReturnsRule : public Rule {
         // Filter to noreturn functions at matching time so the engine does
         // not visit every function body in the TU just to reject them.
         Finder.addMatcher(
-            functionDecl(isDefinition(), isNoReturn(),
-                         hasDescendant(returnStmt().bind("ret_stmt")))
+            functionDecl(isDefinition(), isNoReturn(), hasDescendant(returnStmt().bind("ret_stmt")))
                 .bind("func"),
             this);
     }

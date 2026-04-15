@@ -28,19 +28,18 @@ class UbPointerArithmeticOnPolymorphicRule : public Rule {
         auto polyRecord = cxxRecordDecl(hasMethod(isVirtual())).bind("poly_record");
         auto polyPointerType = pointerType(pointee(hasDeclaration(polyRecord)));
 
-        Finder.addMatcher(unaryOperator(hasAnyOperatorName("++", "--"),
-                                         hasUnaryOperand(hasType(polyPointerType)))
-                              .bind("unary_ptr_arith"),
+        Finder.addMatcher(
+            unaryOperator(hasAnyOperatorName("++", "--"), hasUnaryOperand(hasType(polyPointerType)))
+                .bind("unary_ptr_arith"),
+            this);
+        Finder.addMatcher(binaryOperator(hasAnyOperatorName("+", "-", "+=", "-="),
+                                         hasEitherOperand(hasType(polyPointerType)))
+                              .bind("binary_ptr_arith"),
                           this);
         Finder.addMatcher(
-            binaryOperator(hasAnyOperatorName("+", "-", "+=", "-="),
-                           hasEitherOperand(hasType(polyPointerType)))
-                .bind("binary_ptr_arith"),
+            arraySubscriptExpr(hasBase(ignoringParenImpCasts(hasType(polyPointerType))))
+                .bind("subscript_ptr_arith"),
             this);
-        Finder.addMatcher(arraySubscriptExpr(hasBase(ignoringParenImpCasts(
-                                                 hasType(polyPointerType))))
-                              .bind("subscript_ptr_arith"),
-                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {

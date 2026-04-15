@@ -22,14 +22,11 @@ class BugproneAbruptTerminationRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(
-                callee(functionDecl(hasAnyName(
-                    "abort", "::abort", "std::abort", "::std::abort",
-                    "terminate", "::terminate",
-                    "std::terminate", "::std::terminate",
-                    "exit", "::exit", "_exit", "::_exit",
-                    "_Exit", "::_Exit"))),
-                hasAncestor(functionDecl(unless(isMain())).bind("caller")))
+            callExpr(callee(functionDecl(
+                         hasAnyName("abort", "::abort", "std::abort", "::std::abort", "terminate",
+                                    "::terminate", "std::terminate", "::std::terminate", "exit",
+                                    "::exit", "_exit", "::_exit", "_Exit", "::_Exit"))),
+                     hasAncestor(functionDecl(unless(isMain())).bind("caller")))
                 .bind("term_call"),
             this);
     }
@@ -43,11 +40,9 @@ class BugproneAbruptTerminationRule : public Rule {
             return;
         }
         const clang::FunctionDecl *callee = Call->getDirectCallee();
-        const std::string calleeName =
-            callee != nullptr ? callee->getNameAsString() : "abort";
+        const std::string calleeName = callee != nullptr ? callee->getNameAsString() : "abort";
         emitFinding(Call->getExprLoc(), *Result.SourceManager,
-                    "'" + calleeName +
-                        "()' called from non-main code — prevents caller cleanup");
+                    "'" + calleeName + "()' called from non-main code — prevents caller cleanup");
     }
 };
 

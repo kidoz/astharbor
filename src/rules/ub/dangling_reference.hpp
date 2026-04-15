@@ -36,15 +36,14 @@ class UbDanglingReferenceRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        auto localVarRef = declRefExpr(
-            to(varDecl(hasLocalStorage()).bind("local_var")));
+        auto localVarRef = declRefExpr(to(varDecl(hasLocalStorage()).bind("local_var")));
 
         // Reference return: `T &f() { ... return local; }`
         Finder.addMatcher(
             returnStmt(
                 hasReturnValue(ignoringParenImpCasts(localVarRef)),
-                hasAncestor(functionDecl(returns(referenceType()), isDefinition())
-                                .bind("enclosing_func")))
+                hasAncestor(
+                    functionDecl(returns(referenceType()), isDefinition()).bind("enclosing_func")))
                 .bind("return_ref"),
             this);
         // Pointer return, either via address-of a local or via array-to-
@@ -54,12 +53,11 @@ class UbDanglingReferenceRule : public Rule {
             returnStmt(
                 hasReturnValue(ignoringParenImpCasts(anyOf(
                     unaryOperator(hasOperatorName("&"),
-                                   hasUnaryOperand(ignoringParenImpCasts(localVarRef))),
+                                  hasUnaryOperand(ignoringParenImpCasts(localVarRef))),
                     declRefExpr(
-                        to(varDecl(hasLocalStorage(), hasType(arrayType()))
-                               .bind("local_var")))))),
-                hasAncestor(functionDecl(returns(pointerType()), isDefinition())
-                                .bind("enclosing_func")))
+                        to(varDecl(hasLocalStorage(), hasType(arrayType())).bind("local_var")))))),
+                hasAncestor(
+                    functionDecl(returns(pointerType()), isDefinition()).bind("enclosing_func")))
                 .bind("return_addr"),
             this);
     }
@@ -67,17 +65,13 @@ class UbDanglingReferenceRule : public Rule {
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *LocalVar = Result.Nodes.getNodeAs<clang::VarDecl>("local_var");
         const auto *ReturnRef = Result.Nodes.getNodeAs<clang::ReturnStmt>("return_ref");
-        const auto *ReturnAddr =
-            Result.Nodes.getNodeAs<clang::ReturnStmt>("return_addr");
-        const clang::ReturnStmt *ReturnNode =
-            ReturnRef != nullptr ? ReturnRef : ReturnAddr;
-        if (LocalVar == nullptr || ReturnNode == nullptr ||
-            Result.SourceManager == nullptr) {
+        const auto *ReturnAddr = Result.Nodes.getNodeAs<clang::ReturnStmt>("return_addr");
+        const clang::ReturnStmt *ReturnNode = ReturnRef != nullptr ? ReturnRef : ReturnAddr;
+        if (LocalVar == nullptr || ReturnNode == nullptr || Result.SourceManager == nullptr) {
             return;
         }
         // Static and thread-local storage outlives the function body.
-        if (LocalVar->isStaticLocal() ||
-            LocalVar->getTLSKind() != clang::VarDecl::TLS_None) {
+        if (LocalVar->isStaticLocal() || LocalVar->getTLSKind() != clang::VarDecl::TLS_None) {
             return;
         }
         // Reference return: a parameter that is itself a reference or
@@ -98,10 +92,10 @@ class UbDanglingReferenceRule : public Rule {
 
         const char *kind = ReturnRef != nullptr ? "reference" : "pointer";
         emitFinding(ReturnNode->getBeginLoc(), *Result.SourceManager,
-                    std::string("Returning ") + kind + " to local '" +
-                        LocalVar->getNameAsString() +
+                    std::string("Returning ") + kind + " to local '" + LocalVar->getNameAsString() +
                         "' — storage ends when the function returns; the caller "
-                        "receives a dangling " + kind);
+                        "receives a dangling " +
+                        kind);
     }
 };
 

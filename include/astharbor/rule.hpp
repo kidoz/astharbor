@@ -62,9 +62,7 @@ class Rule : public clang::ast_matchers::MatchFinder::MatchCallback {
             // canonicalization attempts fail.
             file = fileEntry->getFileEntry().tryGetRealPathName().str();
             if (file.empty()) {
-                file = sourceManager.getFileManager()
-                           .getCanonicalName(*fileEntry)
-                           .str();
+                file = sourceManager.getFileManager().getCanonicalName(*fileEntry).str();
             }
             if (file.empty()) {
                 file = fileEntry->getName().str();
@@ -79,8 +77,7 @@ class Rule : public clang::ast_matchers::MatchFinder::MatchCallback {
             return std::nullopt;
         }
         bool invalid = false;
-        unsigned line =
-            sourceManager.getLineNumber(decomposed.first, decomposed.second, &invalid);
+        unsigned line = sourceManager.getLineNumber(decomposed.first, decomposed.second, &invalid);
         unsigned column =
             sourceManager.getColumnNumber(decomposed.first, decomposed.second, &invalid);
 
@@ -96,8 +93,8 @@ class Rule : public clang::ast_matchers::MatchFinder::MatchCallback {
     }
 
     /// Convenience: emit a Finding with no attached fixes.
-    void emitFinding(clang::SourceLocation location,
-                     const clang::SourceManager &sourceManager, std::string message) {
+    void emitFinding(clang::SourceLocation location, const clang::SourceManager &sourceManager,
+                     std::string message) {
         if (auto finding = makeFinding(location, sourceManager, std::move(message))) {
             findings.push_back(std::move(*finding));
         }

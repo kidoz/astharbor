@@ -21,8 +21,8 @@ int Analyzer::run(clang::tooling::ClangTool &tool, const std::string &runId) {
     analysisResult.success = (toolExitCode == 0);
     for (const auto &rule : registry.getRules()) {
         auto ruleFindings = rule->getFindings();
-        analysisResult.findings.insert(analysisResult.findings.end(),
-                                       ruleFindings.begin(), ruleFindings.end());
+        analysisResult.findings.insert(analysisResult.findings.end(), ruleFindings.begin(),
+                                       ruleFindings.end());
     }
     assignFindingIds(analysisResult);
 

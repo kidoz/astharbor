@@ -117,8 +117,7 @@ class ModernizeUseOverrideRule : public Rule {
             // cv-qualifiers and bare `noexcept` arrive as raw_identifier.
             if (kind == clang::tok::raw_identifier || kind == clang::tok::identifier) {
                 auto spelling = clang::Lexer::getSpelling(*token, sourceManager, langOpts);
-                if (spelling == "const" || spelling == "volatile" ||
-                    spelling == "noexcept") {
+                if (spelling == "const" || spelling == "volatile" || spelling == "noexcept") {
                     scanLoc = token->getLocation();
                     insertLoc = clang::Lexer::getLocForEndOfToken(token->getLocation(), 0,
                                                                   sourceManager, langOpts);

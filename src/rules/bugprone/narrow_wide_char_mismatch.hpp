@@ -17,9 +17,7 @@ namespace astharbor {
 class BugproneNarrowWideCharMismatchRule : public Rule {
   public:
     std::string id() const override { return "bugprone/narrow-wide-char-mismatch"; }
-    std::string title() const override {
-        return "Narrow/wide character function mismatch";
-    }
+    std::string title() const override { return "Narrow/wide character function mismatch"; }
     std::string category() const override { return "bugprone"; }
     std::string summary() const override {
         return "A narrow-string function is called with a wide-char argument or "
@@ -31,33 +29,26 @@ class BugproneNarrowWideCharMismatchRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             callExpr(callee(functionDecl(hasAnyName(
-                         "strlen", "strcmp", "strncmp", "strchr", "strrchr",
-                         "strstr", "strtok", "strcpy", "strncpy", "strcat",
-                         "strncat", "memchr",
-                         "::strlen", "::strcmp", "::strncmp", "::strchr",
-                         "::strrchr", "::strstr", "::strtok", "::strcpy",
+                         "strlen", "strcmp", "strncmp", "strchr", "strrchr", "strstr", "strtok",
+                         "strcpy", "strncpy", "strcat", "strncat", "memchr", "::strlen", "::strcmp",
+                         "::strncmp", "::strchr", "::strrchr", "::strstr", "::strtok", "::strcpy",
                          "::strncpy", "::strcat", "::strncat", "::memchr"))))
                 .bind("narrow_call"),
             this);
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "wcslen", "wcscmp", "wcsncmp", "wcschr", "wcsrchr",
-                         "wcsstr", "wcstok", "wcscpy", "wcsncpy", "wcscat",
-                         "wcsncat",
-                         "::wcslen", "::wcscmp", "::wcsncmp", "::wcschr",
-                         "::wcsrchr", "::wcsstr", "::wcstok", "::wcscpy",
-                         "::wcsncpy", "::wcscat", "::wcsncat"))))
+            callExpr(callee(functionDecl(
+                         hasAnyName("wcslen", "wcscmp", "wcsncmp", "wcschr", "wcsrchr", "wcsstr",
+                                    "wcstok", "wcscpy", "wcsncpy", "wcscat", "wcsncat", "::wcslen",
+                                    "::wcscmp", "::wcsncmp", "::wcschr", "::wcsrchr", "::wcsstr",
+                                    "::wcstok", "::wcscpy", "::wcsncpy", "::wcscat", "::wcsncat"))))
                 .bind("wide_call"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *NarrowCall =
-            Result.Nodes.getNodeAs<clang::CallExpr>("narrow_call");
-        const auto *WideCall =
-            Result.Nodes.getNodeAs<clang::CallExpr>("wide_call");
-        const clang::CallExpr *Call =
-            NarrowCall != nullptr ? NarrowCall : WideCall;
+        const auto *NarrowCall = Result.Nodes.getNodeAs<clang::CallExpr>("narrow_call");
+        const auto *WideCall = Result.Nodes.getNodeAs<clang::CallExpr>("wide_call");
+        const clang::CallExpr *Call = NarrowCall != nullptr ? NarrowCall : WideCall;
         if (Call == nullptr || Result.SourceManager == nullptr) {
             return;
         }
@@ -68,8 +59,7 @@ class BugproneNarrowWideCharMismatchRule : public Rule {
         const bool expectsNarrow = (NarrowCall != nullptr);
         for (unsigned index = 0; index < Call->getNumArgs(); ++index) {
             // Strip ALL casts (implicit + explicit) to get the source type.
-            const clang::Expr *stripped =
-                Call->getArg(index)->IgnoreCasts();
+            const clang::Expr *stripped = Call->getArg(index)->IgnoreCasts();
             const clang::QualType sourceType = stripped->getType();
             if (sourceType.isNull()) {
                 continue;
@@ -80,15 +70,12 @@ class BugproneNarrowWideCharMismatchRule : public Rule {
             }
             const bool sourceIsWide = pointee->isWideCharType();
             const bool sourceIsNarrow = pointee->isCharType();
-            if ((expectsNarrow && sourceIsWide) ||
-                (!expectsNarrow && sourceIsNarrow)) {
+            if ((expectsNarrow && sourceIsWide) || (!expectsNarrow && sourceIsNarrow)) {
                 const clang::FunctionDecl *callee = Call->getDirectCallee();
-                const std::string calleeName =
-                    callee != nullptr ? callee->getNameAsString() : "?";
+                const std::string calleeName = callee != nullptr ? callee->getNameAsString() : "?";
                 const char *expected = expectsNarrow ? "narrow" : "wide";
                 const char *actual = expectsNarrow ? "wide" : "narrow";
-                emitFinding(Call->getArg(index)->getBeginLoc(),
-                            *Result.SourceManager,
+                emitFinding(Call->getArg(index)->getBeginLoc(), *Result.SourceManager,
                             calleeName + "() expects " + expected +
                                 " characters but argument source is " + actual);
                 return;

@@ -21,13 +21,11 @@ class UbImplicitWideningMultiplicationRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            implicitCastExpr(
-                hasCastKind(clang::CK_IntegralCast),
-                hasImplicitDestinationType(isInteger()),
-                has(binaryOperator(hasOperatorName("*")).bind("mul")))
-                .bind("cast"),
-            this);
+        Finder.addMatcher(implicitCastExpr(hasCastKind(clang::CK_IntegralCast),
+                                           hasImplicitDestinationType(isInteger()),
+                                           has(binaryOperator(hasOperatorName("*")).bind("mul")))
+                              .bind("cast"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -71,10 +69,9 @@ class UbImplicitWideningMultiplicationRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message =
-            "Multiplication performed in " + std::to_string(multiplicationBits) +
-            "-bit signed type then widened to " + std::to_string(destinationBits) +
-            "-bit type; cast an operand first to avoid overflow";
+        finding.message = "Multiplication performed in " + std::to_string(multiplicationBits) +
+                          "-bit signed type then widened to " + std::to_string(destinationBits) +
+                          "-bit type; cast an operand first to avoid overflow";
         finding.severity = defaultSeverity();
         finding.category = category();
 

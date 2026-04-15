@@ -31,35 +31,29 @@ class PerformanceStringConcatInLoopRule : public Rule {
         // with no qualifiers matches any class named basic_string in
         // any namespace, which is precise enough in practice — no
         // other standard library type shares the name.
-        auto stringType = hasType(hasUnqualifiedDesugaredType(recordType(
-            hasDeclaration(cxxRecordDecl(hasName("basic_string"))))));
-        auto targetVarRef = declRefExpr(
-            to(varDecl(stringType).bind("target_var")));
-        auto sameVarRef = declRefExpr(
-            to(varDecl(equalsBoundNode("target_var"))));
+        auto stringType = hasType(hasUnqualifiedDesugaredType(
+            recordType(hasDeclaration(cxxRecordDecl(hasName("basic_string"))))));
+        auto targetVarRef = declRefExpr(to(varDecl(stringType).bind("target_var")));
+        auto sameVarRef = declRefExpr(to(varDecl(equalsBoundNode("target_var"))));
         // `ignoringImplicit` (not `ignoringParenImpCasts`) is required on
         // the RHS because `std::string operator+` returns a temporary
         // that is wrapped in `MaterializeTemporaryExpr` /
         // `CXXBindTemporaryExpr` before being passed to `operator=`.
         Finder.addMatcher(
             cxxOperatorCallExpr(
-                hasOverloadedOperatorName("="),
-                hasArgument(0, targetVarRef),
+                hasOverloadedOperatorName("="), hasArgument(0, targetVarRef),
                 hasArgument(1, ignoringImplicit(cxxOperatorCallExpr(
                                    hasOverloadedOperatorName("+"),
                                    hasAnyArgument(ignoringParenImpCasts(sameVarRef))))),
-                hasAncestor(stmt(anyOf(forStmt(), whileStmt(), doStmt(),
-                                        cxxForRangeStmt()))))
+                hasAncestor(stmt(anyOf(forStmt(), whileStmt(), doStmt(), cxxForRangeStmt()))))
                 .bind("bad_concat"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *BadConcat =
-            Result.Nodes.getNodeAs<clang::CXXOperatorCallExpr>("bad_concat");
+        const auto *BadConcat = Result.Nodes.getNodeAs<clang::CXXOperatorCallExpr>("bad_concat");
         const auto *TargetVar = Result.Nodes.getNodeAs<clang::VarDecl>("target_var");
-        if (BadConcat == nullptr || TargetVar == nullptr ||
-            Result.SourceManager == nullptr) {
+        if (BadConcat == nullptr || TargetVar == nullptr || Result.SourceManager == nullptr) {
             return;
         }
         if (isInSystemHeader(BadConcat->getExprLoc(), *Result.SourceManager)) {

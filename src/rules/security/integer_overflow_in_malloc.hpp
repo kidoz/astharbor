@@ -20,9 +20,7 @@ namespace astharbor {
 class SecurityIntegerOverflowInMallocRule : public Rule {
   public:
     std::string id() const override { return "security/integer-overflow-in-malloc"; }
-    std::string title() const override {
-        return "Integer overflow in malloc/realloc size";
-    }
+    std::string title() const override { return "Integer overflow in malloc/realloc size"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
         return "Allocation size is a multiplication with a non-constant operand — the "
@@ -32,24 +30,22 @@ class SecurityIntegerOverflowInMallocRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        auto multiplication = ignoringParenImpCasts(
-            binaryOperator(hasOperatorName("*")).bind("mul_expr"));
+        auto multiplication =
+            ignoringParenImpCasts(binaryOperator(hasOperatorName("*")).bind("mul_expr"));
 
         // malloc(size) — include unqualified, ::-prefixed, and std:: spellings
         // for parity with security/signed-arith-in-alloc.
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "malloc", "::malloc", "std::malloc", "::std::malloc"))),
-                     hasArgument(0, multiplication))
-                .bind("alloc_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName("malloc", "::malloc",
+                                                                  "std::malloc", "::std::malloc"))),
+                                   hasArgument(0, multiplication))
+                              .bind("alloc_call"),
+                          this);
         // realloc(ptr, size)
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "realloc", "::realloc", "std::realloc", "::std::realloc"))),
-                     hasArgument(1, multiplication))
-                .bind("alloc_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName(
+                                       "realloc", "::realloc", "std::realloc", "::std::realloc"))),
+                                   hasArgument(1, multiplication))
+                              .bind("alloc_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -97,8 +93,7 @@ class SecurityIntegerOverflowInMallocRule : public Rule {
         }
 
         const clang::FunctionDecl *callee = Call->getDirectCallee();
-        const std::string calleeName =
-            callee != nullptr ? callee->getNameAsString() : "malloc";
+        const std::string calleeName = callee != nullptr ? callee->getNameAsString() : "malloc";
         emitFinding(Mul->getExprLoc(), *Result.SourceManager,
                     "Allocation size in '" + calleeName +
                         "' is a multiplication with a non-constant operand and can "

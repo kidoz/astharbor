@@ -8,18 +8,17 @@ class SecurityNoAllocaRule : public Rule {
     std::string title() const override { return "No alloca()"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects calls to alloca() which allocates on the stack with no overflow protection.";
+        return "Detects calls to alloca() which allocates on the stack with no overflow "
+               "protection.";
     }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "alloca", "__builtin_alloca", "_alloca",
-                         "::alloca"))))
-                .bind("alloca_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName("alloca", "__builtin_alloca",
+                                                                  "_alloca", "::alloca"))))
+                              .bind("alloca_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {

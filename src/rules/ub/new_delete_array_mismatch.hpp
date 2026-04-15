@@ -24,11 +24,9 @@ class UbNewDeleteArrayMismatchRule : public Rule {
         // LValueToRValue ImplicitCastExpr, so `has()` alone is too strict —
         // use `hasDescendant` to reach the DeclRefExpr through the cast.
         Finder.addMatcher(
-            cxxDeleteExpr(
-                hasDescendant(declRefExpr(to(
-                    varDecl(hasInitializer(
-                                ignoringParenImpCasts(cxxNewExpr().bind("new_expr"))))
-                        .bind("var")))))
+            cxxDeleteExpr(hasDescendant(declRefExpr(to(varDecl(hasInitializer(ignoringParenImpCasts(
+                                                                   cxxNewExpr().bind("new_expr"))))
+                                                           .bind("var")))))
                 .bind("delete_expr"),
             this);
     }
@@ -55,13 +53,11 @@ class UbNewDeleteArrayMismatchRule : public Rule {
         finding.severity = defaultSeverity();
         finding.category = category();
         if (newIsArray && !deleteIsArray) {
-            finding.message =
-                "Array allocated with 'new[]' is deleted with scalar 'delete' — "
-                "undefined behavior";
+            finding.message = "Array allocated with 'new[]' is deleted with scalar 'delete' — "
+                              "undefined behavior";
         } else {
-            finding.message =
-                "Scalar allocated with 'new' is deleted with array 'delete[]' — "
-                "undefined behavior";
+            finding.message = "Scalar allocated with 'new' is deleted with array 'delete[]' — "
+                              "undefined behavior";
         }
 
         auto &sourceManager = *Result.SourceManager;

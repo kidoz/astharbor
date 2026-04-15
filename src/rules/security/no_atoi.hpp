@@ -16,10 +16,9 @@ class SecurityNoAtoiRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "atoi", "atol", "atoll", "atof",
-                         "::atoi", "::atol", "::atoll", "::atof",
-                         "std::atoi", "std::atol", "std::atoll", "std::atof"))))
+            callExpr(callee(functionDecl(hasAnyName("atoi", "atol", "atoll", "atof", "::atoi",
+                                                    "::atol", "::atoll", "::atof", "std::atoi",
+                                                    "std::atol", "std::atoll", "std::atof"))))
                 .bind("atoi_call"),
             this);
     }
@@ -40,8 +39,8 @@ class SecurityNoAtoiRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = FunctionName +
-                          "() cannot distinguish parse errors from valid zero — use strtol/strtoul/strtod with errno checking instead";
+        finding.message = FunctionName + "() cannot distinguish parse errors from valid zero — use "
+                                         "strtol/strtoul/strtod with errno checking instead";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Call->getExprLoc()).str();

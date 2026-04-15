@@ -13,9 +13,7 @@ namespace astharbor {
 class UbVirtualCallInCtorDtorRule : public Rule {
   public:
     std::string id() const override { return "ub/virtual-call-in-ctor-dtor"; }
-    std::string title() const override {
-        return "Virtual call in constructor or destructor";
-    }
+    std::string title() const override { return "Virtual call in constructor or destructor"; }
     std::string category() const override { return "ub"; }
     std::string summary() const override {
         return "Virtual method called on 'this' inside a ctor/dtor — the "
@@ -27,17 +25,13 @@ class UbVirtualCallInCtorDtorRule : public Rule {
         using namespace clang::ast_matchers;
         // A virtual member call whose implicit object is `this`
         // (CXXThisExpr), inside a ctor or dtor body.
-        auto virtualOnThis = cxxMemberCallExpr(
-            callee(cxxMethodDecl(isVirtual())),
-            on(ignoringParenImpCasts(cxxThisExpr())));
-        Finder.addMatcher(
-            virtualOnThis.bind("vcall"),
-            this);
+        auto virtualOnThis = cxxMemberCallExpr(callee(cxxMethodDecl(isVirtual())),
+                                               on(ignoringParenImpCasts(cxxThisExpr())));
+        Finder.addMatcher(virtualOnThis.bind("vcall"), this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Call =
-            Result.Nodes.getNodeAs<clang::CXXMemberCallExpr>("vcall");
+        const auto *Call = Result.Nodes.getNodeAs<clang::CXXMemberCallExpr>("vcall");
         if (Call == nullptr || Result.SourceManager == nullptr) {
             return;
         }
@@ -54,8 +48,7 @@ class UbVirtualCallInCtorDtorRule : public Rule {
             return;
         }
         const clang::CXXMethodDecl *method = Call->getMethodDecl();
-        const std::string methodName =
-            method != nullptr ? method->getNameAsString() : "<virtual>";
+        const std::string methodName = method != nullptr ? method->getNameAsString() : "<virtual>";
         emitFinding(Call->getExprLoc(), *Result.SourceManager,
                     "Virtual call to '" + methodName +
                         "()' inside a constructor or destructor — the derived "
@@ -66,8 +59,7 @@ class UbVirtualCallInCtorDtorRule : public Rule {
     /// Walk parent chain to check whether `stmt` is directly inside
     /// a CXXConstructorDecl or CXXDestructorDecl body (not across a
     /// lambda boundary).
-    static bool isInsideCtorOrDtor(clang::ASTContext &context,
-                                    const clang::Stmt &stmt) {
+    static bool isInsideCtorOrDtor(clang::ASTContext &context, const clang::Stmt &stmt) {
         auto parents = context.getParents(stmt);
         while (!parents.empty()) {
             const auto &node = parents[0];

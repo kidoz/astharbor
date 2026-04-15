@@ -41,13 +41,11 @@ class ResourceLeakOnThrowRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            varDecl(hasLocalStorage(), hasType(pointerType()),
-                    hasInitializer(ignoringParenImpCasts(cxxNewExpr())),
-                    hasAncestor(
-                        functionDecl(isDefinition()).bind("enclosing_func")))
-                .bind("owning_var"),
-            this);
+        Finder.addMatcher(varDecl(hasLocalStorage(), hasType(pointerType()),
+                                  hasInitializer(ignoringParenImpCasts(cxxNewExpr())),
+                                  hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
+                              .bind("owning_var"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -82,12 +80,10 @@ class ResourceLeakOnThrowRule : public Rule {
                 // A path becomes clean if it deletes the variable OR
                 // reassigns it (ownership has moved somewhere we can
                 // no longer track locally).
-                return cfg::isDeleteOf(stmt, OwningVar) ||
-                       cfg::isAssignmentTo(stmt, OwningVar);
+                return cfg::isDeleteOf(stmt, OwningVar) || cfg::isAssignmentTo(stmt, OwningVar);
             },
             [&](const clang::Stmt *stmt) {
-                if (const auto *throwExpr =
-                        cfg::findFirstDescendant<clang::CXXThrowExpr>(stmt)) {
+                if (const auto *throwExpr = cfg::findFirstDescendant<clang::CXXThrowExpr>(stmt)) {
                     return throwExpr->getThrowLoc();
                 }
                 return clang::SourceLocation{};

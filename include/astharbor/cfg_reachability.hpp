@@ -51,13 +51,11 @@ inline bool containsStmt(const clang::Stmt *haystack, const clang::Stmt *needle)
 
 /// Return true if `expr`, after stripping parens and implicit casts, is a
 /// direct `DeclRefExpr` to `targetVar`.
-inline bool isDirectRefTo(const clang::Expr *expr,
-                           const clang::VarDecl *targetVar) {
+inline bool isDirectRefTo(const clang::Expr *expr, const clang::VarDecl *targetVar) {
     if (expr == nullptr || targetVar == nullptr) {
         return false;
     }
-    const auto *ref =
-        llvm::dyn_cast<clang::DeclRefExpr>(expr->IgnoreParenImpCasts());
+    const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(expr->IgnoreParenImpCasts());
     return ref != nullptr && ref->getDecl() == targetVar;
 }
 
@@ -68,14 +66,12 @@ inline bool isDirectRefTo(const clang::Expr *expr,
 /// looking at the top-level is enough and a recursive walk would report
 /// nested assignments the CFG has already split out into their own
 /// elements.
-inline bool isAssignmentTo(const clang::Stmt *stmt,
-                            const clang::VarDecl *targetVar) {
+inline bool isAssignmentTo(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
     if (stmt == nullptr) {
         return false;
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(stmt)) {
-        return binary->isAssignmentOp() &&
-               isDirectRefTo(binary->getLHS(), targetVar);
+        return binary->isAssignmentOp() && isDirectRefTo(binary->getLHS(), targetVar);
     }
     if (const auto *op = llvm::dyn_cast<clang::CXXOperatorCallExpr>(stmt)) {
         return op->getOperator() == clang::OO_Equal && op->getNumArgs() == 2 &&
@@ -87,11 +83,9 @@ inline bool isAssignmentTo(const clang::Stmt *stmt,
 /// Return true if `stmt` is a top-level `delete` (or `delete[]`) whose
 /// operand is `targetVar`. Sibling of `isAssignmentTo` for use as a
 /// `stopsPath` predicate in reachability walks over owning pointers.
-inline bool isDeleteOf(const clang::Stmt *stmt,
-                        const clang::VarDecl *targetVar) {
+inline bool isDeleteOf(const clang::Stmt *stmt, const clang::VarDecl *targetVar) {
     const auto *deleteExpr = llvm::dyn_cast_or_null<clang::CXXDeleteExpr>(stmt);
-    return deleteExpr != nullptr &&
-           isDirectRefTo(deleteExpr->getArgument(), targetVar);
+    return deleteExpr != nullptr && isDirectRefTo(deleteExpr->getArgument(), targetVar);
 }
 
 /// Pre-order DFS over `stmt`'s subtree (including `stmt` itself)
@@ -99,8 +93,7 @@ inline bool isDeleteOf(const clang::Stmt *stmt,
 /// nullptr if none matches. Used by rules to walk expression trees
 /// attached to a CFG element looking for a specific shape.
 template <typename Predicate>
-const clang::Stmt *findFirstDescendantIf(const clang::Stmt *stmt,
-                                          Predicate predicate) {
+const clang::Stmt *findFirstDescendantIf(const clang::Stmt *stmt, Predicate predicate) {
     if (stmt == nullptr) {
         return nullptr;
     }
@@ -117,12 +110,9 @@ const clang::Stmt *findFirstDescendantIf(const clang::Stmt *stmt,
 
 /// Typed form of `findFirstDescendantIf`: return the first descendant
 /// (including `stmt`) that is-a `StmtType`, or nullptr.
-template <typename StmtType>
-const StmtType *findFirstDescendant(const clang::Stmt *stmt) {
+template <typename StmtType> const StmtType *findFirstDescendant(const clang::Stmt *stmt) {
     const clang::Stmt *found = findFirstDescendantIf(
-        stmt, [](const clang::Stmt *node) {
-            return llvm::isa<StmtType>(node);
-        });
+        stmt, [](const clang::Stmt *node) { return llvm::isa<StmtType>(node); });
     return llvm::dyn_cast_or_null<StmtType>(found);
 }
 
@@ -154,8 +144,8 @@ locateStmt(const clang::CFG &cfg, const clang::Stmt *needle) {
 /// reason about branches of a specific control-flow statement — the
 /// block's `succs()` then give the then/else or per-case successor
 /// blocks in a well-defined order.
-inline const clang::CFGBlock *
-locateTerminator(const clang::CFG &cfg, const clang::Stmt *terminator) {
+inline const clang::CFGBlock *locateTerminator(const clang::CFG &cfg,
+                                               const clang::Stmt *terminator) {
     if (terminator == nullptr) {
         return nullptr;
     }
@@ -175,25 +165,24 @@ locateDecl(const clang::CFG &cfg, const clang::VarDecl *targetVar) {
         return std::nullopt;
     }
     auto containsDecl = [&](const clang::Stmt *stmt) {
-        std::function<bool(const clang::Stmt *)> recurse =
-            [&](const clang::Stmt *node) {
-                if (node == nullptr) {
-                    return false;
-                }
-                if (const auto *declStmt = llvm::dyn_cast<clang::DeclStmt>(node)) {
-                    for (const clang::Decl *decl : declStmt->decls()) {
-                        if (decl == targetVar) {
-                            return true;
-                        }
-                    }
-                }
-                for (const clang::Stmt *child : node->children()) {
-                    if (recurse(child)) {
+        std::function<bool(const clang::Stmt *)> recurse = [&](const clang::Stmt *node) {
+            if (node == nullptr) {
+                return false;
+            }
+            if (const auto *declStmt = llvm::dyn_cast<clang::DeclStmt>(node)) {
+                for (const clang::Decl *decl : declStmt->decls()) {
+                    if (decl == targetVar) {
                         return true;
                     }
                 }
-                return false;
-            };
+            }
+            for (const clang::Stmt *child : node->children()) {
+                if (recurse(child)) {
+                    return true;
+                }
+            }
+            return false;
+        };
         return recurse(stmt);
     };
     for (const clang::CFGBlock *block : cfg) {
@@ -232,9 +221,9 @@ locateDecl(const clang::CFG &cfg, const clang::VarDecl *targetVar) {
 /// on the CFG decomposing such compound expressions into separate
 /// elements when that distinction matters.
 template <typename StopsPath, typename FindsReport>
-std::optional<clang::SourceLocation>
-forwardReachable(const clang::CFGBlock *startBlock, size_t scanFromIndex,
-                 StopsPath stopsPath, FindsReport findsReport) {
+std::optional<clang::SourceLocation> forwardReachable(const clang::CFGBlock *startBlock,
+                                                      size_t scanFromIndex, StopsPath stopsPath,
+                                                      FindsReport findsReport) {
     if (startBlock == nullptr) {
         return std::nullopt;
     }
@@ -248,8 +237,7 @@ forwardReachable(const clang::CFGBlock *startBlock, size_t scanFromIndex,
         work.pop_front();
 
         bool stopThisPath = false;
-        for (size_t elementIndex = scanFrom;
-             elementIndex < block->size() && !stopThisPath;
+        for (size_t elementIndex = scanFrom; elementIndex < block->size() && !stopThisPath;
              ++elementIndex) {
             auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
             if (!cfgStmt) {
@@ -308,28 +296,24 @@ struct CachedCfg {
     std::unique_ptr<clang::CFG> cfg;
     /// Map from any `Stmt*` appearing in a CFGStmt's subtree to the
     /// (block, element index) that owns it. Used by `locateStmt`.
-    std::unordered_map<const clang::Stmt *,
-                        std::pair<const clang::CFGBlock *, size_t>> stmtIndex;
+    std::unordered_map<const clang::Stmt *, std::pair<const clang::CFGBlock *, size_t>> stmtIndex;
     /// Map from any local `VarDecl*` declared inside a CFG `DeclStmt`
     /// to the (block, element index) that owns the declaration. Used
     /// by `locateDecl`.
-    std::unordered_map<const clang::VarDecl *,
-                        std::pair<const clang::CFGBlock *, size_t>> declIndex;
+    std::unordered_map<const clang::VarDecl *, std::pair<const clang::CFGBlock *, size_t>>
+        declIndex;
     /// Map from a control-flow statement (IfStmt / WhileStmt / etc.)
     /// to the CFG block whose terminator is that statement. Used by
     /// `locateTerminator`.
-    std::unordered_map<const clang::Stmt *, const clang::CFGBlock *>
-        terminatorIndex;
+    std::unordered_map<const clang::Stmt *, const clang::CFGBlock *> terminatorIndex;
 };
 
-inline std::unordered_map<const clang::FunctionDecl *, CachedCfg> &
-threadLocalCfgCache() {
+inline std::unordered_map<const clang::FunctionDecl *, CachedCfg> &threadLocalCfgCache() {
     thread_local std::unordered_map<const clang::FunctionDecl *, CachedCfg> cache;
     return cache;
 }
 
-inline std::unordered_map<const clang::FunctionDecl *, bool> &
-threadLocalTryCache() {
+inline std::unordered_map<const clang::FunctionDecl *, bool> &threadLocalTryCache() {
     thread_local std::unordered_map<const clang::FunctionDecl *, bool> cache;
     return cache;
 }
@@ -337,9 +321,8 @@ threadLocalTryCache() {
 /// Recursively register every descendant `Stmt*` and every declared
 /// `VarDecl*` under `stmt` as owned by `(block, elementIndex)`. Called
 /// once per CFG element at cache-population time.
-inline void indexStmtSubtree(
-    const clang::Stmt *stmt, const clang::CFGBlock *block, size_t elementIndex,
-    CachedCfg &entry) {
+inline void indexStmtSubtree(const clang::Stmt *stmt, const clang::CFGBlock *block,
+                             size_t elementIndex, CachedCfg &entry) {
     if (stmt == nullptr) {
         return;
     }
@@ -347,8 +330,7 @@ inline void indexStmtSubtree(
     if (const auto *declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
         for (const clang::Decl *decl : declStmt->decls()) {
             if (const auto *varDecl = llvm::dyn_cast<clang::VarDecl>(decl)) {
-                entry.declIndex.emplace(varDecl,
-                                         std::make_pair(block, elementIndex));
+                entry.declIndex.emplace(varDecl, std::make_pair(block, elementIndex));
             }
         }
     }
@@ -367,7 +349,7 @@ inline void indexStmtSubtree(
 /// The first call for a function also builds three O(1)-lookup indices
 /// used by the `locate*` helpers — see the `CachedCfg` comment.
 inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
-                                        clang::ASTContext &context) {
+                                       clang::ASTContext &context) {
     if (func == nullptr || !func->hasBody()) {
         return nullptr;
     }
@@ -386,14 +368,12 @@ inline const clang::CFG *getOrBuildCfg(const clang::FunctionDecl *func,
             if (block == nullptr) {
                 continue;
             }
-            for (size_t elementIndex = 0; elementIndex < block->size();
-                 ++elementIndex) {
+            for (size_t elementIndex = 0; elementIndex < block->size(); ++elementIndex) {
                 auto cfgStmt = (*block)[elementIndex].getAs<clang::CFGStmt>();
                 if (!cfgStmt) {
                     continue;
                 }
-                detail::indexStmtSubtree(cfgStmt->getStmt(), block, elementIndex,
-                                          entry);
+                detail::indexStmtSubtree(cfgStmt->getStmt(), block, elementIndex, entry);
             }
             if (const clang::Stmt *terminator = block->getTerminatorStmt()) {
                 entry.terminatorIndex.emplace(terminator, block);
@@ -445,8 +425,8 @@ locateDecl(const clang::FunctionDecl *func, const clang::VarDecl *targetVar) {
     return lookup->second;
 }
 
-inline const clang::CFGBlock *
-locateTerminator(const clang::FunctionDecl *func, const clang::Stmt *terminator) {
+inline const clang::CFGBlock *locateTerminator(const clang::FunctionDecl *func,
+                                               const clang::Stmt *terminator) {
     if (func == nullptr || terminator == nullptr) {
         return nullptr;
     }

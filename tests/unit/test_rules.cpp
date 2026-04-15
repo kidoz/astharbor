@@ -156,9 +156,9 @@ TEST_CASE("BugproneUnsafeMemoryOperationRuleTest.IgnoresMemcpyOnTrivialType") {
 // ─── UB rules ──────────────────────────────────────────────────────────
 
 TEST_CASE("UbMissingReturnInNonVoidRuleTest.DetectsFunctionWithNoReturn") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
+                                       R"cpp(
             int compute(int x) {
                 int y = x + 1;
             }
@@ -170,9 +170,9 @@ TEST_CASE("UbMissingReturnInNonVoidRuleTest.DetectsFunctionWithNoReturn") {
 }
 
 TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresFunctionWithReturn") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
+                                       R"cpp(
             int compute(int x) {
                 return x + 1;
             }
@@ -183,9 +183,9 @@ TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresFunctionWithReturn") {
 }
 
 TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresVoidFunction") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
+                                       R"cpp(
             void doNothing() {
                 int y = 1;
             }
@@ -196,9 +196,9 @@ TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresVoidFunction") {
 }
 
 TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresMain") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMissingReturnInNonVoidRule>(),
+                                       R"cpp(
             int main() {
                 int y = 1;
             }
@@ -209,9 +209,9 @@ TEST_CASE("UbMissingReturnInNonVoidRuleTest.IgnoresMain") {
 }
 
 TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsDivisionByLiteralZero") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x / 0;
             }
@@ -223,9 +223,9 @@ TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsDivisionByLiteralZero") {
 }
 
 TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsModuloByLiteralZero") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x % 0;
             }
@@ -236,9 +236,9 @@ TEST_CASE("UbDivisionByZeroLiteralRuleTest.DetectsModuloByLiteralZero") {
 }
 
 TEST_CASE("UbDivisionByZeroLiteralRuleTest.IgnoresNonZeroDivisor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDivisionByZeroLiteralRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x / 2;
             }
@@ -249,9 +249,9 @@ TEST_CASE("UbDivisionByZeroLiteralRuleTest.IgnoresNonZeroDivisor") {
 }
 
 TEST_CASE("UbShiftByNegativeRuleTest.DetectsShiftByNegativeLiteral") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbShiftByNegativeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbShiftByNegativeRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x << -1;
             }
@@ -263,9 +263,9 @@ TEST_CASE("UbShiftByNegativeRuleTest.DetectsShiftByNegativeLiteral") {
 }
 
 TEST_CASE("UbShiftByNegativeRuleTest.IgnoresPositiveShift") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbShiftByNegativeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbShiftByNegativeRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x << 3;
             }
@@ -276,9 +276,9 @@ TEST_CASE("UbShiftByNegativeRuleTest.IgnoresPositiveShift") {
 }
 
 TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftEqualToBitwidth") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x << 32;
             }
@@ -290,9 +290,9 @@ TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftEqualToBitwidth") {
 }
 
 TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftGreaterThanBitwidth") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x << 64;
             }
@@ -303,9 +303,9 @@ TEST_CASE("UbShiftPastBitwidthRuleTest.DetectsShiftGreaterThanBitwidth") {
 }
 
 TEST_CASE("UbShiftPastBitwidthRuleTest.IgnoresValidShift") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbShiftPastBitwidthRule>(),
+                                       R"cpp(
             int test(int x) {
                 return x << 5;
             }
@@ -316,9 +316,9 @@ TEST_CASE("UbShiftPastBitwidthRuleTest.IgnoresValidShift") {
 }
 
 TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexPastEnd") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
+                                       R"cpp(
             int test() {
                 int arr[10];
                 return arr[15];
@@ -331,9 +331,9 @@ TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexPastEnd") {
 }
 
 TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexEqualToSize") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
+                                       R"cpp(
             int test() {
                 int arr[10];
                 return arr[10];
@@ -345,9 +345,9 @@ TEST_CASE("UbStaticArrayOobConstantRuleTest.DetectsIndexEqualToSize") {
 }
 
 TEST_CASE("UbStaticArrayOobConstantRuleTest.IgnoresValidIndex") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbStaticArrayOobConstantRule>(),
+                                       R"cpp(
             int test() {
                 int arr[10];
                 return arr[5];
@@ -359,9 +359,9 @@ TEST_CASE("UbStaticArrayOobConstantRuleTest.IgnoresValidIndex") {
 }
 
 TEST_CASE("UbDeleteNonVirtualDtorRuleTest.DetectsPolymorphicClassWithNonVirtualDtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
+                                       R"cpp(
             class Base {
             public:
                 virtual void foo();
@@ -378,9 +378,9 @@ TEST_CASE("UbDeleteNonVirtualDtorRuleTest.DetectsPolymorphicClassWithNonVirtualD
 }
 
 TEST_CASE("UbDeleteNonVirtualDtorRuleTest.IgnoresVirtualDestructor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
+                                       R"cpp(
             class Base {
             public:
                 virtual void foo();
@@ -396,9 +396,9 @@ TEST_CASE("UbDeleteNonVirtualDtorRuleTest.IgnoresVirtualDestructor") {
 }
 
 TEST_CASE("UbDeleteNonVirtualDtorRuleTest.IgnoresNonPolymorphicClass") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDeleteNonVirtualDtorRule>(),
+                                       R"cpp(
             class Plain {
             public:
                 int data;
@@ -415,9 +415,9 @@ TEST_CASE("UbDeleteNonVirtualDtorRuleTest.IgnoresNonPolymorphicClass") {
 // ─── Wave 2 UB rules ───────────────────────────────────────────────────
 
 TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewArrayScalarDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+                                       R"cpp(
             void test() {
                 int *arr = new int[10];
                 delete arr;
@@ -433,9 +433,9 @@ TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewArrayScalarDelete") {
 }
 
 TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewScalarArrayDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int;
                 delete[] p;
@@ -447,9 +447,9 @@ TEST_CASE("UbNewDeleteArrayMismatchRuleTest.DetectsNewScalarArrayDelete") {
 }
 
 TEST_CASE("UbNewDeleteArrayMismatchRuleTest.IgnoresMatchedForms") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNewDeleteArrayMismatchRule>(),
+                                       R"cpp(
             void test() {
                 int *arr = new int[10];
                 delete[] arr;
@@ -559,9 +559,9 @@ TEST_CASE("UbImplicitWideningMultiplicationRuleTest.IgnoresPreCastOperand") {
 }
 
 TEST_CASE("UbNoreturnFunctionReturnsRuleTest.DetectsReturnInNoreturnFunction") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
+                                       R"cpp(
             [[noreturn]] void fatal() {
                 return;
             }
@@ -573,9 +573,9 @@ TEST_CASE("UbNoreturnFunctionReturnsRuleTest.DetectsReturnInNoreturnFunction") {
 }
 
 TEST_CASE("UbNoreturnFunctionReturnsRuleTest.IgnoresNormalFunction") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNoreturnFunctionReturnsRule>(),
+                                       R"cpp(
             int normal() {
                 return 42;
             }
@@ -630,9 +630,9 @@ TEST_CASE("UbReinterpretCastTypePunningRuleTest.IgnoresRelatedClassCast") {
 // ─── Autofixes on existing rules ───────────────────────────────────────
 
 TEST_CASE("ModernizeUseOverrideRuleTest.ProducesOverrideAutofix") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ModernizeUseOverrideRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ModernizeUseOverrideRule>(),
+                                       R"cpp(
             class Base {
             public:
                 virtual void foo();
@@ -720,9 +720,9 @@ TEST_CASE("ReadabilityContainerSizeEmptyRuleTest.HandlesReversedOperands") {
 // ─── Missing initial rule coverage ─────────────────────────────────
 
 TEST_CASE("ReadabilityUseUsingAliasRuleTest.DetectsSimpleTypedef") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
+                                       R"cpp(
             typedef int MyInt;
         )cpp");
 
@@ -735,9 +735,9 @@ TEST_CASE("ReadabilityUseUsingAliasRuleTest.DetectsSimpleTypedef") {
 }
 
 TEST_CASE("ReadabilityUseUsingAliasRuleTest.NoAutofixForFunctionPointerTypedef") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ReadabilityUseUsingAliasRule>(),
+                                       R"cpp(
             typedef int (*Callback)(int);
         )cpp");
 
@@ -748,9 +748,9 @@ TEST_CASE("ReadabilityUseUsingAliasRuleTest.NoAutofixForFunctionPointerTypedef")
 }
 
 TEST_CASE("PortabilityVlaInCxxRuleTest.DetectsVlaInCpp") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
+                                       R"cpp(
             void test(int n) {
                 int arr[n];
                 (void)arr;
@@ -763,9 +763,9 @@ TEST_CASE("PortabilityVlaInCxxRuleTest.DetectsVlaInCpp") {
 }
 
 TEST_CASE("PortabilityVlaInCxxRuleTest.IgnoresFixedSizeArray") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::PortabilityVlaInCxxRule>(),
+                                       R"cpp(
             void test() {
                 int arr[10];
                 (void)arr;
@@ -883,9 +883,9 @@ TEST_CASE("UbCStyleCastPointerPunningRuleTest.IgnoresCastToChar") {
 }
 
 TEST_CASE("UbCastingThroughVoidRuleTest.DetectsStaticCastChain") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbCastingThroughVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbCastingThroughVoidRule>(),
+                                       R"cpp(
             int test(float *p) {
                 return *static_cast<int *>(static_cast<void *>(p));
             }
@@ -897,9 +897,9 @@ TEST_CASE("UbCastingThroughVoidRuleTest.DetectsStaticCastChain") {
 }
 
 TEST_CASE("UbCastingThroughVoidRuleTest.IgnoresSingleStaticCast") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbCastingThroughVoidRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbCastingThroughVoidRule>(),
+                                       R"cpp(
             void *test(int *p) {
                 return static_cast<void *>(p);
             }
@@ -910,9 +910,9 @@ TEST_CASE("UbCastingThroughVoidRuleTest.IgnoresSingleStaticCast") {
 }
 
 TEST_CASE("UbMoveOfConstRuleTest.DetectsMoveOfConstLvalue") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMoveOfConstRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMoveOfConstRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
                 template <typename T> T&& move(const T& t);
@@ -931,9 +931,9 @@ TEST_CASE("UbMoveOfConstRuleTest.DetectsMoveOfConstLvalue") {
 }
 
 TEST_CASE("UbMoveOfConstRuleTest.IgnoresMoveOfNonConstLvalue") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbMoveOfConstRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbMoveOfConstRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
             }
@@ -950,9 +950,9 @@ TEST_CASE("UbMoveOfConstRuleTest.IgnoresMoveOfNonConstLvalue") {
 }
 
 TEST_CASE("UbSizeofArrayParameterRuleTest.DetectsSizeofArrayParam") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
+                                       R"cpp(
             unsigned long test(int arr[100]) {
                 return sizeof(arr);
             }
@@ -964,9 +964,9 @@ TEST_CASE("UbSizeofArrayParameterRuleTest.DetectsSizeofArrayParam") {
 }
 
 TEST_CASE("UbSizeofArrayParameterRuleTest.IgnoresSizeofLocalArray") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbSizeofArrayParameterRule>(),
+                                       R"cpp(
             unsigned long test() {
                 int arr[100];
                 return sizeof(arr);
@@ -980,9 +980,9 @@ TEST_CASE("UbSizeofArrayParameterRuleTest.IgnoresSizeofLocalArray") {
 // ─── use-after-move (Tier 2) ───────────────────────────────────────────
 
 TEST_CASE("UbUseAfterMoveRuleTest.DetectsUseAfterMove") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterMoveRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterMoveRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
                 template <typename T> T&& move(const T& t);
@@ -1002,9 +1002,9 @@ TEST_CASE("UbUseAfterMoveRuleTest.DetectsUseAfterMove") {
 }
 
 TEST_CASE("UbUseAfterMoveRuleTest.IgnoresReassignmentBeforeReuse") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterMoveRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterMoveRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
                 template <typename T> T&& move(const T& t);
@@ -1024,9 +1024,9 @@ TEST_CASE("UbUseAfterMoveRuleTest.IgnoresReassignmentBeforeReuse") {
 }
 
 TEST_CASE("UbUseAfterMoveRuleTest.IgnoresMoveWithNoSubsequentUse") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterMoveRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterMoveRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
                 template <typename T> T&& move(const T& t);
@@ -1047,9 +1047,9 @@ TEST_CASE("UbUseAfterMoveRuleTest.IgnoresMoveInBranchWithEarlyReturn") {
     // CFG-based analysis: the use after the if-branch is unreachable from
     // the move inside the branch because the branch returns. The previous
     // source-order visitor flagged this as a false positive.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterMoveRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterMoveRule>(),
+                                       R"cpp(
             namespace std {
                 template <typename T> T&& move(T& t);
                 template <typename T> T&& move(const T& t);
@@ -1071,9 +1071,9 @@ TEST_CASE("UbUseAfterMoveRuleTest.IgnoresMoveInBranchWithEarlyReturn") {
 // ─── double-free-local (Tier 2) ────────────────────────────────────────
 
 TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsSameVariableDeletedTwice") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int(42);
                 delete p;
@@ -1087,9 +1087,9 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsSameVariableDeletedTwice") {
 }
 
 TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresReassignmentBetweenDeletes") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int(42);
                 delete p;
@@ -1103,9 +1103,9 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresReassignmentBetweenDeletes") {
 }
 
 TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresSingleDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int(42);
                 delete p;
@@ -1119,9 +1119,9 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresSingleDelete") {
 TEST_CASE("UbDoubleFreeLocalRuleTest.IgnoresDeleteInBranchWithEarlyReturn") {
     // The `return` cuts the path from the first delete to the second,
     // so no reachable path double-frees `p`.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+                                       R"cpp(
             void test(bool flag) {
                 int *p = new int(42);
                 if (flag) {
@@ -1140,9 +1140,9 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsDeleteInBothBranchesAfterMerge") {
     // Both branches delete p, then the merge point deletes again.
     // Every path from the first delete reaches the merge delete, so this
     // is a real double-free.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDoubleFreeLocalRule>(),
+                                       R"cpp(
             void test(bool flag) {
                 int *p = new int(42);
                 if (flag) {
@@ -1162,9 +1162,9 @@ TEST_CASE("UbDoubleFreeLocalRuleTest.DetectsDeleteInBothBranchesAfterMerge") {
 // ─── uninitialized-local (Tier 2) ──────────────────────────────────────
 
 TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadBeforeWrite") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             int test() {
                 int x;
                 return x + 1;
@@ -1177,9 +1177,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadBeforeWrite") {
 }
 
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteBeforeRead") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             int test() {
                 int x;
                 x = 42;
@@ -1192,9 +1192,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteBeforeRead") {
 }
 
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresInitializedVar") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             int test() {
                 int x = 42;
                 return x + 1;
@@ -1206,9 +1206,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.IgnoresInitializedVar") {
 }
 
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresAddressOfFollowedByRead") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             extern void init(int* p);
             int test() {
                 int x;
@@ -1225,9 +1225,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadOnBranchMissingInit") {
     // One branch writes x, the other does not; the read after the
     // merge is reachable from the unwritten path, so this is a real
     // uninitialized read.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             int test(bool flag) {
                 int x;
                 if (flag) {
@@ -1245,9 +1245,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.DetectsReadOnBranchMissingInit") {
 TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteInAllBranches") {
     // Both branches write x, so every path to the read has a prior
     // write — no finding.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUninitializedLocalRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUninitializedLocalRule>(),
+                                       R"cpp(
             int test(bool flag) {
                 int x;
                 if (flag) {
@@ -1266,9 +1266,9 @@ TEST_CASE("UbUninitializedLocalRuleTest.IgnoresWriteInAllBranches") {
 // ─── null-deref-after-check (Tier 2) ───────────────────────────────────
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsArrowDerefInNullBranch") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             struct S { int field; };
             int test(S *p) {
                 if (p == nullptr) {
@@ -1284,9 +1284,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsArrowDerefInNullBranch") {
 }
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsStarDerefInNotCheck") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             int test(int *p) {
                 if (!p) {
                     return *p;
@@ -1300,9 +1300,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsStarDerefInNotCheck") {
 }
 
 TEST_CASE("UbNullDerefAfterCheckRuleTest.DetectsSubscriptInNullBranch") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             int test(int *p) {
                 if (p == 0) {
                     return p[5];
@@ -1319,9 +1319,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresEarlyReturnGuard") {
     // The canonical GOOD pattern: early-return on null. The then-block
     // has no dereferences, so BFS finds nothing and the rule stays
     // silent.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             int test(int *p) {
                 if (p == nullptr) {
                     return -1;
@@ -1337,9 +1337,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresEarlyReturnGuard") {
 TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresReassignmentBeforeDeref") {
     // `p = &fallback;` restores a non-null value on this path, so the
     // subsequent dereference is safe and should not be reported.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             int test(int *p) {
                 int fallback = 42;
                 if (p == nullptr) {
@@ -1357,9 +1357,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresReassignmentBeforeDeref") {
 TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresDerefOutsideThenBranch") {
     // The dereference lives after the `if`, not inside its then-branch,
     // so the check-then-use pattern is fine.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefAfterCheckRule>(),
+                                       R"cpp(
             int test(int *p) {
                 if (p == nullptr) {
                     return -1;
@@ -1375,9 +1375,9 @@ TEST_CASE("UbNullDerefAfterCheckRuleTest.IgnoresDerefOutsideThenBranch") {
 // ─── resource/leak-on-throw (Tier 2) ───────────────────────────────────
 
 TEST_CASE("ResourceLeakOnThrowRuleTest.DetectsLeakWhenThrowFollowsNew") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+                                       R"cpp(
             struct Err { const char *what; };
             void test(bool flag) {
                 int *p = new int(42);
@@ -1394,9 +1394,9 @@ TEST_CASE("ResourceLeakOnThrowRuleTest.DetectsLeakWhenThrowFollowsNew") {
 }
 
 TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresDeleteBeforeThrow") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+                                       R"cpp(
             struct Err { const char *what; };
             void test(bool flag) {
                 int *p = new int(42);
@@ -1415,9 +1415,9 @@ TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresDeleteBeforeThrow") {
 TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresFunctionWithTryBlock") {
     // Any `try` in the function suppresses the rule conservatively —
     // the throw might be caught locally and wouldn't actually leak.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+                                       R"cpp(
             struct Err { const char *what; };
             void test(bool flag) {
                 int *p = new int(42);
@@ -1435,9 +1435,9 @@ TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresFunctionWithTryBlock") {
 }
 
 TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresNoThrowPath") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int(42);
                 delete p;
@@ -1452,9 +1452,9 @@ TEST_CASE("ResourceLeakOnThrowRuleTest.IgnoresReassignmentBeforeThrow") {
     // Reassigning `p` transfers ownership away — we can no longer track
     // what the current value points at, so the throw on this path is
     // not our rule's concern.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceLeakOnThrowRule>(),
+                                       R"cpp(
             struct Err { const char *what; };
             void sink(int *);
             void test(bool flag) {
@@ -1478,9 +1478,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfLocal") {
     // `const int&` avoids Clang's hard error on binding a non-const
     // reference to a function-local lvalue while still matching the
     // rule's `returns(referenceType())` predicate.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             const int& test() {
                 int x = 42;
                 return x;
@@ -1493,9 +1493,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfLocal") {
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfAddressOfLocal") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             int* test() {
                 int x = 42;
                 return &x;
@@ -1507,9 +1507,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfAddressOfLocal") {
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfArrayDecay") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             char* test() {
                 char buf[16] = "hello";
                 return buf;
@@ -1521,9 +1521,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsPointerReturnOfArrayDecay") {
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfByValueParam") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             const int& test(int x) {
                 return x;
             }
@@ -1534,9 +1534,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.DetectsReferenceReturnOfByValueParam") {
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.IgnoresReferenceReturnOfReferenceParam") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             int& test(int& x) {
                 return x;
             }
@@ -1547,9 +1547,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.IgnoresReferenceReturnOfReferenceParam") 
 }
 
 TEST_CASE("UbDanglingReferenceRuleTest.IgnoresStaticLocal") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             int& test() {
                 static int x = 42;
                 return x;
@@ -1562,9 +1562,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.IgnoresStaticLocal") {
 
 TEST_CASE("UbDanglingReferenceRuleTest.IgnoresValueReturn") {
     // Copy-by-value is fine even if the source is a local.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbDanglingReferenceRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbDanglingReferenceRule>(),
+                                       R"cpp(
             int test() {
                 int x = 42;
                 return x;
@@ -1578,9 +1578,9 @@ TEST_CASE("UbDanglingReferenceRuleTest.IgnoresValueReturn") {
 // ─── bugprone/swapped-arguments ────────────────────────────────────────
 
 TEST_CASE("BugproneSwappedArgumentsRuleTest.DetectsSwappedDstSrc") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void copy(char *dst, const char *src, unsigned long n);
             void caller() {
                 char dst[32];
@@ -1595,9 +1595,9 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.DetectsSwappedDstSrc") {
 }
 
 TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresCorrectArgumentOrder") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void copy(char *dst, const char *src, unsigned long n);
             void caller() {
                 char dst[32];
@@ -1613,9 +1613,9 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresCorrectArgumentOrder") {
 TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresSingleLetterParameterNames") {
     // Single-letter names are common and carry no semantic weight; the
     // rule requires length >= 2 on both sides to avoid the noise.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void f(int a, int b);
             void caller() {
                 int a = 1, b = 2;
@@ -1630,9 +1630,9 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresSingleLetterParameterNames") 
 TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresLiteralArguments") {
     // A literal in one of the positions means the programmer intended
     // a constant, so the "swap" shape doesn't apply.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void f(int width, int height);
             void caller() {
                 int width = 10;
@@ -1647,9 +1647,9 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresLiteralArguments") {
 TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresMismatchedNames") {
     // Only one of the two names cross-matches; a single coincidence is
     // not enough for the swap heuristic to fire.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void f(int width, int height);
             void caller() {
                 int width = 10;
@@ -1664,9 +1664,9 @@ TEST_CASE("BugproneSwappedArgumentsRuleTest.IgnoresMismatchedNames") {
 
 TEST_CASE("BugproneSwappedArgumentsRuleTest.DetectsSwapAmongThreeArguments") {
     // Only the first two are swapped; the third position is untouched.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSwappedArgumentsRule>(),
+                                       R"cpp(
             void draw(int width, int height, int color);
             void caller() {
                 int width = 1, height = 2, color = 3;
@@ -2006,9 +2006,9 @@ TEST_CASE("BugproneSizeofPointerInMemfuncRuleTest.IgnoresSizeofOfOtherVariable")
 // ─── bugprone/char-eof-comparison (CERT FIO34-C) ──────────────────────
 
 TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharInitFromGetchar") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+                                       R"cpp(
             extern "C" int getchar();
             void test() {
                 char c = getchar();
@@ -2022,9 +2022,9 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharInitFromGetchar") {
 }
 
 TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharAssignFromFgetc") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+                                       R"cpp(
             struct FILE;
             extern "C" int fgetc(FILE*);
             void test(FILE *fp) {
@@ -2041,9 +2041,9 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsCharAssignFromFgetc") {
 TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsUnsignedCharInitFromGetc") {
     // `unsigned char` is where the bug bites hardest — EOF (-1) can
     // never be represented.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+                                       R"cpp(
             struct FILE;
             extern "C" int getc(FILE*);
             void test(FILE *fp) {
@@ -2059,9 +2059,9 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.DetectsUnsignedCharInitFromGetc") {
 TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresIntTarget") {
     // The correct idiom: store the return in an int so EOF is
     // preserved.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+                                       R"cpp(
             extern "C" int getchar();
             void test() {
                 int c = getchar();
@@ -2076,9 +2076,9 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresIntTarget") {
 TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresUnrelatedFunction") {
     // A function that happens to return int but isn't from the
     // getchar family is irrelevant.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCharEofComparisonRule>(),
+                                       R"cpp(
             extern "C" int compute();
             void test() {
                 char c = compute();
@@ -2093,9 +2093,9 @@ TEST_CASE("BugproneCharEofComparisonRuleTest.IgnoresUnrelatedFunction") {
 // ─── ub/use-after-free (CFG, CERT MEM30-C) ────────────────────────────
 
 TEST_CASE("UbUseAfterFreeRuleTest.DetectsDerefAfterFree") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             int test() {
@@ -2111,9 +2111,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.DetectsDerefAfterFree") {
 }
 
 TEST_CASE("UbUseAfterFreeRuleTest.DetectsArrowMemberAfterFree") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             struct S { int field; };
@@ -2129,9 +2129,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.DetectsArrowMemberAfterFree") {
 }
 
 TEST_CASE("UbUseAfterFreeRuleTest.DetectsPassAsCallArgAfterFree") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             extern void sink(void*);
@@ -2147,9 +2147,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.DetectsPassAsCallArgAfterFree") {
 }
 
 TEST_CASE("UbUseAfterFreeRuleTest.IgnoresReassignmentBeforeUse") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             int test() {
@@ -2168,9 +2168,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.IgnoresUseOnlyInUnreachableBranch") {
     // The use of p lives inside a then-branch that ends in `return`
     // before the free. On the path after `free(p)`, there are no
     // dereferences of p.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             int test(bool flag) {
@@ -2190,9 +2190,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.IgnoresUseOnlyInUnreachableBranch") {
 }
 
 TEST_CASE("UbUseAfterFreeRuleTest.IgnoresSingleFree") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterFreeRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterFreeRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             void test() {
@@ -2208,9 +2208,9 @@ TEST_CASE("UbUseAfterFreeRuleTest.IgnoresSingleFree") {
 // ─── ub/free-of-non-heap (CERT MEM34-C) ──────────────────────────────
 
 TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfAddressOfLocal") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void free(void*);
             void test() {
                 int x = 42;
@@ -2224,9 +2224,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfAddressOfLocal") {
 }
 
 TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfLocalArrayDecay") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void free(void*);
             void test() {
                 char buf[256];
@@ -2239,9 +2239,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfLocalArrayDecay") {
 }
 
 TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStaticVar") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void free(void*);
             int global_val = 42;
             void test() {
@@ -2254,9 +2254,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStaticVar") {
 }
 
 TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStringLiteral") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void free(void*);
             void test() {
                 free((void*)"hello");
@@ -2268,9 +2268,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.DetectsFreeOfStringLiteral") {
 }
 
 TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresHeapPointer") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void *malloc(unsigned long);
             extern "C" void free(void*);
             void test() {
@@ -2286,9 +2286,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresHeapPointer") {
 TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresPointerParameter") {
     // A pointer parameter could come from anywhere — we can't know
     // whether it was heap-allocated or not.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbFreeOfNonHeapRule>(),
+                                       R"cpp(
             extern "C" void free(void*);
             void test(void *p) {
                 free(p);
@@ -2302,9 +2302,9 @@ TEST_CASE("UbFreeOfNonHeapRuleTest.IgnoresPointerParameter") {
 // ─── portability/c-style-variadic (CERT DCL50-CPP) ───────────────────
 
 TEST_CASE("PortabilityCStyleVariadicRuleTest.DetectsVariadicDefinition") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+                                       R"cpp(
             void log(const char *fmt, ...) {}
         )cpp");
 
@@ -2315,9 +2315,9 @@ TEST_CASE("PortabilityCStyleVariadicRuleTest.DetectsVariadicDefinition") {
 
 TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresExternCDeclaration") {
     // C-linkage functions like printf are expected to be variadic.
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+                                       R"cpp(
             extern "C" int printf(const char *, ...);
         )cpp");
 
@@ -2326,9 +2326,9 @@ TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresExternCDeclaration") {
 }
 
 TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresNonVariadicFunction") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::PortabilityCStyleVariadicRule>(),
+                                       R"cpp(
             void log(const char *msg) {}
         )cpp");
 
@@ -2339,9 +2339,9 @@ TEST_CASE("PortabilityCStyleVariadicRuleTest.IgnoresNonVariadicFunction") {
 // ─── ub/virtual-call-in-ctor-dtor (CERT OOP50-CPP) ───────────────────
 
 TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInCtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+                                       R"cpp(
             struct Base {
                 virtual void init() {}
                 Base() { init(); }
@@ -2354,9 +2354,9 @@ TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInCtor") {
 }
 
 TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInDtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+                                       R"cpp(
             struct Base {
                 virtual void cleanup() {}
                 ~Base() { cleanup(); }
@@ -2368,9 +2368,9 @@ TEST_CASE("UbVirtualCallInCtorDtorRuleTest.DetectsVirtualCallInDtor") {
 }
 
 TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresNonVirtualCall") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+                                       R"cpp(
             struct Base {
                 void setup() {}
                 Base() { setup(); }
@@ -2382,9 +2382,9 @@ TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresNonVirtualCall") {
 }
 
 TEST_CASE("UbVirtualCallInCtorDtorRuleTest.IgnoresVirtualCallOutsideCtorDtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbVirtualCallInCtorDtorRule>(),
+                                       R"cpp(
             struct Base {
                 virtual void init() {}
                 void doInit() { init(); }
@@ -2494,9 +2494,9 @@ TEST_CASE("PortabilityPointerIntegerCastRuleTest.IgnoresIntptrSizedCast") {
 // ─── bugprone/abrupt-termination (CERT ERR50-CPP) ────────────────────
 
 TEST_CASE("BugproneAbruptTerminationRuleTest.DetectsAbortInLibraryCode") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
+                                       R"cpp(
             extern "C" void abort();
             void library_func() {
                 abort();
@@ -2509,9 +2509,9 @@ TEST_CASE("BugproneAbruptTerminationRuleTest.DetectsAbortInLibraryCode") {
 }
 
 TEST_CASE("BugproneAbruptTerminationRuleTest.IgnoresMainFunction") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneAbruptTerminationRule>(),
+                                       R"cpp(
             extern "C" void exit(int);
             int main() {
                 exit(1);
@@ -2526,9 +2526,9 @@ TEST_CASE("BugproneAbruptTerminationRuleTest.IgnoresMainFunction") {
 // ─── bugprone/copy-ctor-non-const (CERT OOP58-CPP) ──────────────────
 
 TEST_CASE("BugproneCopyCtorNonConstRuleTest.DetectsNonConstCopyCtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
+                                       R"cpp(
             struct T {
                 int x;
                 T() : x(0) {}
@@ -2542,9 +2542,9 @@ TEST_CASE("BugproneCopyCtorNonConstRuleTest.DetectsNonConstCopyCtor") {
 }
 
 TEST_CASE("BugproneCopyCtorNonConstRuleTest.IgnoresConstCopyCtor") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneCopyCtorNonConstRule>(),
+                                       R"cpp(
             struct T {
                 int x;
                 T() : x(0) {}
@@ -2559,9 +2559,9 @@ TEST_CASE("BugproneCopyCtorNonConstRuleTest.IgnoresConstCopyCtor") {
 // ─── ub/use-after-delete (CERT MEM30-C) ──────────────────────────────
 
 TEST_CASE("UbUseAfterDeleteRuleTest.DetectsDerefAfterDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+                                       R"cpp(
             int test() {
                 int *p = new int(42);
                 delete p;
@@ -2575,9 +2575,9 @@ TEST_CASE("UbUseAfterDeleteRuleTest.DetectsDerefAfterDelete") {
 }
 
 TEST_CASE("UbUseAfterDeleteRuleTest.DetectsCallArgAfterDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+                                       R"cpp(
             extern void sink(int*);
             void test() {
                 int *p = new int(42);
@@ -2591,9 +2591,9 @@ TEST_CASE("UbUseAfterDeleteRuleTest.DetectsCallArgAfterDelete") {
 }
 
 TEST_CASE("UbUseAfterDeleteRuleTest.IgnoresReassignmentBeforeUse") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+                                       R"cpp(
             int test() {
                 int *p = new int(42);
                 delete p;
@@ -2607,9 +2607,9 @@ TEST_CASE("UbUseAfterDeleteRuleTest.IgnoresReassignmentBeforeUse") {
 }
 
 TEST_CASE("UbUseAfterDeleteRuleTest.IgnoresSingleDelete") {
-    const auto result = astharbor::test::runRuleOnCode(
-        std::make_unique<astharbor::UbUseAfterDeleteRule>(),
-        R"cpp(
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbUseAfterDeleteRule>(),
+                                       R"cpp(
             void test() {
                 int *p = new int(42);
                 delete p;

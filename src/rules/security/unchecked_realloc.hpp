@@ -8,7 +8,8 @@ class SecurityUncheckedReallocRule : public Rule {
     std::string title() const override { return "Unchecked realloc"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects p = realloc(p, n) where realloc failure loses the original pointer and leaks memory.";
+        return "Detects p = realloc(p, n) where realloc failure loses the original pointer and "
+               "leaks memory.";
     }
     std::string defaultSeverity() const override { return "error"; }
 

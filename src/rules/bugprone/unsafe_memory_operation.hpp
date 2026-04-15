@@ -16,12 +16,11 @@ class BugproneUnsafeMemoryOperationRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
 
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName("memset", "::memset", "std::memset", "memcpy",
-                                                   "::memcpy", "std::memcpy", "memmove",
-                                                   "::memmove", "std::memmove"))))
-                .bind("memory_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName(
+                                       "memset", "::memset", "std::memset", "memcpy", "::memcpy",
+                                       "std::memcpy", "memmove", "::memmove", "std::memmove"))))
+                              .bind("memory_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -36,8 +35,8 @@ class BugproneUnsafeMemoryOperationRule : public Rule {
         }
 
         const std::string FunctionName = Callee->getQualifiedNameAsString();
-        const bool IsMemset = FunctionName == "memset" || FunctionName == "::memset" ||
-                              FunctionName == "std::memset";
+        const bool IsMemset =
+            FunctionName == "memset" || FunctionName == "::memset" || FunctionName == "std::memset";
         const bool IsMemcpyLike = FunctionName == "memcpy" || FunctionName == "::memcpy" ||
                                   FunctionName == "std::memcpy" || FunctionName == "memmove" ||
                                   FunctionName == "::memmove" || FunctionName == "std::memmove";
@@ -59,8 +58,9 @@ class BugproneUnsafeMemoryOperationRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = FunctionName +
-                    " operates on a non-trivially-copyable type and can bypass object semantics";
+        finding.message =
+            FunctionName +
+            " operates on a non-trivially-copyable type and can bypass object semantics";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Location).str();
@@ -73,7 +73,8 @@ class BugproneUnsafeMemoryOperationRule : public Rule {
     }
 
   private:
-    static bool hasNonTrivialPointee(const clang::Expr *Expression, const clang::ASTContext &Context) {
+    static bool hasNonTrivialPointee(const clang::Expr *Expression,
+                                     const clang::ASTContext &Context) {
         if (Expression == nullptr) {
             return false;
         }

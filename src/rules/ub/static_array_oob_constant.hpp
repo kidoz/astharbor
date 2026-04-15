@@ -25,9 +25,8 @@ class UbStaticArrayOobConstantRule : public Rule {
         // forms (`arr[-1]`, which appears in the AST as a unary operator
         // wrapping an integer literal).
         Finder.addMatcher(
-            arraySubscriptExpr(
-                hasBase(ignoringParenImpCasts(
-                    declRefExpr(to(varDecl(hasType(constantArrayType())).bind("array_var"))))))
+            arraySubscriptExpr(hasBase(ignoringParenImpCasts(declRefExpr(
+                                   to(varDecl(hasType(constantArrayType())).bind("array_var"))))))
                 .bind("subscript"),
             this);
     }

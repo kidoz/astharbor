@@ -17,17 +17,15 @@ class UbDivisionByZeroLiteralRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            binaryOperator(hasAnyOperatorName("/", "%"),
-                           hasRHS(ignoringParenImpCasts(integerLiteral(equals(0)))))
-                .bind("div_by_zero"),
-            this);
+        Finder.addMatcher(binaryOperator(hasAnyOperatorName("/", "%"),
+                                         hasRHS(ignoringParenImpCasts(integerLiteral(equals(0)))))
+                              .bind("div_by_zero"),
+                          this);
         // Also match compound assignments /= and %=
-        Finder.addMatcher(
-            binaryOperator(hasAnyOperatorName("/=", "%="),
-                           hasRHS(ignoringParenImpCasts(integerLiteral(equals(0)))))
-                .bind("div_by_zero"),
-            this);
+        Finder.addMatcher(binaryOperator(hasAnyOperatorName("/=", "%="),
+                                         hasRHS(ignoringParenImpCasts(integerLiteral(equals(0)))))
+                              .bind("div_by_zero"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {

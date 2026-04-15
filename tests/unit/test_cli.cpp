@@ -79,8 +79,7 @@ TEST_CASE("RunStoreTest.PersistsAndLoadsDependencies") {
     original.fileHashes["/abs/lib.hpp"] = "bbbbbbbbbbbbbbbb";
     original.dependencies["/abs/main.cpp"] = {"/abs/lib.hpp"};
 
-    auto tempPath = std::filesystem::temp_directory_path() /
-                    "astharbor_runstore_deps_test.json";
+    auto tempPath = std::filesystem::temp_directory_path() / "astharbor_runstore_deps_test.json";
     std::filesystem::remove(tempPath);
     REQUIRE(RunStore::save(original, tempPath));
 
@@ -100,8 +99,7 @@ TEST_CASE("RunStoreTest.PersistsAndLoadsDependencies") {
 TEST_CASE("RunStoreTest.LoadsRunWithoutDependenciesField") {
     // Ensure backward compatibility: a run file written before the
     // dependencies field existed must still round-trip through load.
-    auto tempPath = std::filesystem::temp_directory_path() /
-                    "astharbor_runstore_legacy_test.json";
+    auto tempPath = std::filesystem::temp_directory_path() / "astharbor_runstore_legacy_test.json";
     {
         std::ofstream out(tempPath);
         out << R"({"runId": "legacy", "success": true,

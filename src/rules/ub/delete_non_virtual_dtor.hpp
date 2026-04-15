@@ -11,7 +11,9 @@ namespace astharbor {
 class UbDeleteNonVirtualDtorRule : public Rule {
   public:
     std::string id() const override { return "ub/delete-non-virtual-dtor"; }
-    std::string title() const override { return "Delete polymorphic object without virtual destructor"; }
+    std::string title() const override {
+        return "Delete polymorphic object without virtual destructor";
+    }
     std::string category() const override { return "ub"; }
     std::string summary() const override {
         return "Delete through base pointer without virtual destructor — undefined behavior "
@@ -57,8 +59,7 @@ class UbDeleteNonVirtualDtorRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = "Deleting object of polymorphic class '" +
-                          recordDecl->getNameAsString() +
+        finding.message = "Deleting object of polymorphic class '" + recordDecl->getNameAsString() +
                           "' which lacks a virtual destructor — undefined behavior if the "
                           "dynamic type is a derived class";
         finding.severity = defaultSeverity();

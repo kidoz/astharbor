@@ -17,8 +17,7 @@ class SecurityLargeStackArrayRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            varDecl(hasLocalStorage(), hasType(constantArrayType())).bind("stack_array"),
-            this);
+            varDecl(hasLocalStorage(), hasType(constantArrayType())).bind("stack_array"), this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -28,8 +27,7 @@ class SecurityLargeStackArrayRule : public Rule {
             return;
         }
 
-        const auto *ArrayType =
-            Result.Context->getAsConstantArrayType(VarDeclaration->getType());
+        const auto *ArrayType = Result.Context->getAsConstantArrayType(VarDeclaration->getType());
         if (ArrayType == nullptr) {
             return;
         }

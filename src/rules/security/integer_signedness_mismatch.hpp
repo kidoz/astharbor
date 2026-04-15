@@ -15,13 +15,11 @@ class SecurityIntegerSignednessMismatchRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            binaryOperator(
-                hasAnyOperatorName("<", "<=", ">", ">=", "==", "!="),
-                hasLHS(expr().bind("cmp_lhs")),
-                hasRHS(expr().bind("cmp_rhs")))
-                .bind("cmp_op"),
-            this);
+        Finder.addMatcher(binaryOperator(hasAnyOperatorName("<", "<=", ">", ">=", "==", "!="),
+                                         hasLHS(expr().bind("cmp_lhs")),
+                                         hasRHS(expr().bind("cmp_rhs")))
+                              .bind("cmp_op"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {

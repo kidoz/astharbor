@@ -8,16 +8,16 @@ class SecurityUnsafeTempFileRule : public Rule {
     std::string title() const override { return "Unsafe temporary file"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects calls to tmpnam(), tempnam(), and mktemp() which create predictable or race-prone temporary file names.";
+        return "Detects calls to tmpnam(), tempnam(), and mktemp() which create predictable or "
+               "race-prone temporary file names.";
     }
     std::string defaultSeverity() const override { return "error"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "tmpnam", "tempnam", "mktemp",
-                         "::tmpnam", "::tempnam", "::mktemp", "_mktemp"))))
+            callExpr(callee(functionDecl(hasAnyName("tmpnam", "tempnam", "mktemp", "::tmpnam",
+                                                    "::tempnam", "::mktemp", "_mktemp"))))
                 .bind("temp_call"),
             this);
     }

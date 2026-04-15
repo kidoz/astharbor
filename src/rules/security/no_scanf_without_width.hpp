@@ -16,13 +16,11 @@ class SecurityNoScanfWithoutWidthRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "scanf", "fscanf", "sscanf",
-                         "::scanf", "::fscanf", "::sscanf",
-                         "std::scanf", "std::fscanf", "std::sscanf"))))
-                .bind("scanf_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName(
+                                       "scanf", "fscanf", "sscanf", "::scanf", "::fscanf",
+                                       "::sscanf", "std::scanf", "std::fscanf", "std::sscanf"))))
+                              .bind("scanf_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {

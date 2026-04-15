@@ -23,8 +23,7 @@ class UbReinterpretCastTypePunningRule : public Rule {
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Cast =
-            Result.Nodes.getNodeAs<clang::CXXReinterpretCastExpr>("cast");
+        const auto *Cast = Result.Nodes.getNodeAs<clang::CXXReinterpretCastExpr>("cast");
         if (Cast == nullptr || Result.SourceManager == nullptr) {
             return;
         }

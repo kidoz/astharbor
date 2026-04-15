@@ -54,9 +54,8 @@ class UbCStyleCastPointerPunningRule : public Rule {
         }
 
         emitFinding(Cast->getExprLoc(), *Result.SourceManager,
-                    "C-style cast between unrelated pointer types '" +
-                        sourcePointee.getAsString() + " *' and '" +
-                        destinationPointee.getAsString() +
+                    "C-style cast between unrelated pointer types '" + sourcePointee.getAsString() +
+                        " *' and '" + destinationPointee.getAsString() +
                         " *' — likely strict-aliasing violation; use std::memcpy or "
                         "std::bit_cast");
     }

@@ -34,34 +34,25 @@ class BugproneUnsequencedModificationRule : public Rule {
         // second modification of the same variable is most likely
         // unsequenced. We bind the enclosing full-expression rather
         // than the increment itself, then scan in run().
-        Finder.addMatcher(
-            binaryOperator(
-                hasEitherOperand(ignoringParenImpCasts(
-                    unaryOperator(
-                        hasAnyOperatorName("++", "--"),
-                        hasUnaryOperand(ignoringParenImpCasts(
-                            declRefExpr(to(varDecl(hasLocalStorage())))))))))
-                .bind("binop_with_mod"),
-            this);
-        Finder.addMatcher(
-            callExpr(
-                hasAnyArgument(ignoringParenImpCasts(
-                    unaryOperator(
-                        hasAnyOperatorName("++", "--"),
-                        hasUnaryOperand(ignoringParenImpCasts(
-                            declRefExpr(to(varDecl(hasLocalStorage())))))))))
-                .bind("call_with_mod"),
-            this);
+        Finder.addMatcher(binaryOperator(hasEitherOperand(ignoringParenImpCasts(unaryOperator(
+                                             hasAnyOperatorName("++", "--"),
+                                             hasUnaryOperand(ignoringParenImpCasts(
+                                                 declRefExpr(to(varDecl(hasLocalStorage())))))))))
+                              .bind("binop_with_mod"),
+                          this);
+        Finder.addMatcher(callExpr(hasAnyArgument(ignoringParenImpCasts(unaryOperator(
+                                       hasAnyOperatorName("++", "--"),
+                                       hasUnaryOperand(ignoringParenImpCasts(
+                                           declRefExpr(to(varDecl(hasLocalStorage())))))))))
+                              .bind("call_with_mod"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *BinOp =
-            Result.Nodes.getNodeAs<clang::BinaryOperator>("binop_with_mod");
-        const auto *CallNode =
-            Result.Nodes.getNodeAs<clang::CallExpr>("call_with_mod");
-        const clang::Expr *Root =
-            BinOp != nullptr ? static_cast<const clang::Expr *>(BinOp)
-                             : static_cast<const clang::Expr *>(CallNode);
+        const auto *BinOp = Result.Nodes.getNodeAs<clang::BinaryOperator>("binop_with_mod");
+        const auto *CallNode = Result.Nodes.getNodeAs<clang::CallExpr>("call_with_mod");
+        const clang::Expr *Root = BinOp != nullptr ? static_cast<const clang::Expr *>(BinOp)
+                                                   : static_cast<const clang::Expr *>(CallNode);
         if (Root == nullptr || Result.SourceManager == nullptr) {
             return;
         }
@@ -70,8 +61,7 @@ class BugproneUnsequencedModificationRule : public Rule {
         }
 
         // Collect all variables modified by ++ or -- under Root.
-        llvm::SmallVector<std::pair<const clang::VarDecl *,
-                                     clang::SourceLocation>, 4> mods;
+        llvm::SmallVector<std::pair<const clang::VarDecl *, clang::SourceLocation>, 4> mods;
         collectModifications(Root, mods);
         if (mods.size() < 2) {
             return;
@@ -93,19 +83,15 @@ class BugproneUnsequencedModificationRule : public Rule {
   private:
     static void collectModifications(
         const clang::Stmt *stmt,
-        llvm::SmallVectorImpl<std::pair<const clang::VarDecl *,
-                                         clang::SourceLocation>> &mods) {
+        llvm::SmallVectorImpl<std::pair<const clang::VarDecl *, clang::SourceLocation>> &mods) {
         if (stmt == nullptr) {
             return;
         }
         if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(stmt)) {
             if (unary->isIncrementDecrementOp()) {
-                const auto *inner =
-                    unary->getSubExpr()->IgnoreParenImpCasts();
-                if (const auto *ref =
-                        llvm::dyn_cast<clang::DeclRefExpr>(inner)) {
-                    if (const auto *varDecl =
-                            llvm::dyn_cast<clang::VarDecl>(ref->getDecl())) {
+                const auto *inner = unary->getSubExpr()->IgnoreParenImpCasts();
+                if (const auto *ref = llvm::dyn_cast<clang::DeclRefExpr>(inner)) {
+                    if (const auto *varDecl = llvm::dyn_cast<clang::VarDecl>(ref->getDecl())) {
                         mods.push_back({varDecl, unary->getExprLoc()});
                     }
                 }

@@ -8,17 +8,17 @@ class SecurityNoSprintfRule : public Rule {
     std::string title() const override { return "No sprintf()"; }
     std::string category() const override { return "security"; }
     std::string summary() const override {
-        return "Detects calls to sprintf() which performs unbounded writes and can cause buffer overflows.";
+        return "Detects calls to sprintf() which performs unbounded writes and can cause buffer "
+               "overflows.";
     }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "sprintf", "wsprintf", "::sprintf", "std::sprintf"))))
-                .bind("sprintf_call"),
-            this);
+        Finder.addMatcher(callExpr(callee(functionDecl(hasAnyName("sprintf", "wsprintf",
+                                                                  "::sprintf", "std::sprintf"))))
+                              .bind("sprintf_call"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -31,8 +31,7 @@ class SecurityNoSprintfRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message =
-            "sprintf() performs unbounded writes — use snprintf() instead";
+        finding.message = "sprintf() performs unbounded writes — use snprintf() instead";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Call->getExprLoc()).str();

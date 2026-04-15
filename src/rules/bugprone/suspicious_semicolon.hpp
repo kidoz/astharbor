@@ -24,7 +24,8 @@ class BugproneSuspiciousSemicolonRule : public Rule {
 
             Finding finding;
             finding.ruleId = id();
-            finding.message = "If statement has an empty body; this is often caused by a stray semicolon";
+            finding.message =
+                "If statement has an empty body; this is often caused by a stray semicolon";
             finding.severity = defaultSeverity();
             finding.category = category();
             finding.file = sourceManager.getFilename(Body->getSemiLoc()).str();

@@ -7,7 +7,9 @@ class ReadabilityConstReturnTypeRule : public Rule {
     std::string id() const override { return "readability/const-return-type"; }
     std::string title() const override { return "Const return type"; }
     std::string category() const override { return "readability"; }
-    std::string summary() const override { return "Functions should not return const value types."; }
+    std::string summary() const override {
+        return "Functions should not return const value types.";
+    }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
@@ -23,10 +25,12 @@ class ReadabilityConstReturnTypeRule : public Rule {
             }
             clang::QualType ReturnType = Function->getReturnType();
             // Check if it's a local const qualification on a value type (not pointer/ref)
-            if (ReturnType.isLocalConstQualified() && !ReturnType->isReferenceType() && !ReturnType->isPointerType()) {
+            if (ReturnType.isLocalConstQualified() && !ReturnType->isReferenceType() &&
+                !ReturnType->isPointerType()) {
                 Finding finding;
                 finding.ruleId = id();
-                finding.message = "Return type is const-qualified value, which inhibits move semantics";
+                finding.message =
+                    "Return type is const-qualified value, which inhibits move semantics";
                 finding.severity = defaultSeverity();
                 finding.category = category();
 

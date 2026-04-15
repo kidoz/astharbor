@@ -22,15 +22,12 @@ class PortabilityCStyleVariadicRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            functionDecl(isVariadic(), isDefinition(),
-                         unless(isExternC()))
-                .bind("variadic_func"),
+            functionDecl(isVariadic(), isDefinition(), unless(isExternC())).bind("variadic_func"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Func =
-            Result.Nodes.getNodeAs<clang::FunctionDecl>("variadic_func");
+        const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("variadic_func");
         if (Func == nullptr || Result.SourceManager == nullptr) {
             return;
         }

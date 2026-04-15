@@ -69,7 +69,7 @@
 
 namespace astharbor {
 
-void registerBuiltinRules(RuleRegistry& registry) {
+void registerBuiltinRules(RuleRegistry &registry) {
     registry.registerRule(std::make_unique<ModernizeUseNullptrRule>());
     registry.registerRule(std::make_unique<ModernizeUseOverrideRule>());
     registry.registerRule(std::make_unique<BugproneAssignmentInConditionRule>());

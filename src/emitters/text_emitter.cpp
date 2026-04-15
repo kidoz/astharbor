@@ -7,8 +7,8 @@ void TextEmitter::emit(const AnalysisResult &result, std::ostream &out) {
         out << "error: analysis failed due to compilation errors\n";
     }
     for (const auto &finding : result.findings) {
-        out << finding.file << ":" << finding.line << ":" << finding.column << ": warning: "
-            << finding.message << " [" << finding.ruleId << "]\n";
+        out << finding.file << ":" << finding.line << ":" << finding.column
+            << ": warning: " << finding.message << " [" << finding.ruleId << "]\n";
     }
 }
 

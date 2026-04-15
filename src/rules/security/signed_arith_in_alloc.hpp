@@ -16,14 +16,11 @@ class SecuritySignedArithInAllocRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(
-                callee(functionDecl(hasAnyName(
-                    "malloc", "calloc", "realloc", "reallocarray",
-                    "::malloc", "::calloc", "::realloc",
-                    "std::malloc", "std::calloc", "std::realloc"))),
-                hasAnyArgument(ignoringParenImpCasts(
-                    binaryOperator(hasAnyOperatorName("+", "*", "-"))
-                        .bind("signed_arith"))))
+            callExpr(callee(functionDecl(hasAnyName("malloc", "calloc", "realloc", "reallocarray",
+                                                    "::malloc", "::calloc", "::realloc",
+                                                    "std::malloc", "std::calloc", "std::realloc"))),
+                     hasAnyArgument(ignoringParenImpCasts(
+                         binaryOperator(hasAnyOperatorName("+", "*", "-")).bind("signed_arith"))))
                 .bind("alloc_call"),
             this);
     }

@@ -21,10 +21,9 @@ class UbSizeofArrayParameterRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            unaryExprOrTypeTraitExpr(
-                ofKind(clang::UETT_SizeOf),
-                has(ignoringParenImpCasts(
-                    declRefExpr(to(parmVarDecl().bind("param"))).bind("ref"))))
+            unaryExprOrTypeTraitExpr(ofKind(clang::UETT_SizeOf),
+                                     has(ignoringParenImpCasts(
+                                         declRefExpr(to(parmVarDecl().bind("param"))).bind("ref"))))
                 .bind("sizeof_expr"),
             this);
     }

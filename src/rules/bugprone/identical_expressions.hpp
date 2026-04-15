@@ -7,20 +7,20 @@ class BugproneIdenticalExpressionsRule : public Rule {
     std::string id() const override { return "bugprone/identical-expressions"; }
     std::string title() const override { return "Identical expressions"; }
     std::string category() const override { return "bugprone"; }
-    std::string summary() const override { return "Detects identical variables on both sides of a binary operator."; }
+    std::string summary() const override {
+        return "Detects identical variables on both sides of a binary operator.";
+    }
     std::string defaultSeverity() const override { return "error"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        
+
         Finder.addMatcher(
-            binaryOperator(
-                hasAnyOperatorName("==", "!=", "<", "<=", ">", ">=", "-", "/"),
-                hasLHS(ignoringParenImpCasts(declRefExpr().bind("lhs"))),
-                hasRHS(ignoringParenImpCasts(declRefExpr().bind("rhs")))
-            ).bind("op"),
-            this
-        );
+            binaryOperator(hasAnyOperatorName("==", "!=", "<", "<=", ">", ">=", "-", "/"),
+                           hasLHS(ignoringParenImpCasts(declRefExpr().bind("lhs"))),
+                           hasRHS(ignoringParenImpCasts(declRefExpr().bind("rhs"))))
+                .bind("op"),
+            this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -28,7 +28,8 @@ class BugproneIdenticalExpressionsRule : public Rule {
         const auto *RightExpr = Result.Nodes.getNodeAs<clang::DeclRefExpr>("rhs");
         const auto *BinaryOp = Result.Nodes.getNodeAs<clang::BinaryOperator>("op");
 
-        if (LeftExpr == nullptr || RightExpr == nullptr || BinaryOp == nullptr || Result.SourceManager == nullptr) {
+        if (LeftExpr == nullptr || RightExpr == nullptr || BinaryOp == nullptr ||
+            Result.SourceManager == nullptr) {
             return;
         }
 

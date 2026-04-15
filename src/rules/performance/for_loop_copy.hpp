@@ -7,21 +7,21 @@ class PerformanceForLoopCopyRule : public Rule {
     std::string id() const override { return "performance/for-loop-copy"; }
     std::string title() const override { return "For loop copy"; }
     std::string category() const override { return "performance"; }
-    std::string summary() const override { return "Range-based for loop makes an expensive copy of the loop variable."; }
+    std::string summary() const override {
+        return "Range-based for loop makes an expensive copy of the loop variable.";
+    }
     std::string defaultSeverity() const override { return "warning"; }
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        
+
         Finder.addMatcher(
-            cxxForRangeStmt(hasLoopVariable(
-                varDecl(
-                    hasType(hasUnqualifiedDesugaredType(recordType())),
-                    unless(hasType(referenceType()))
-                ).bind("loop_var")
-            )).bind("for_loop"), 
-            this
-        );
+            cxxForRangeStmt(
+                hasLoopVariable(varDecl(hasType(hasUnqualifiedDesugaredType(recordType())),
+                                        unless(hasType(referenceType())))
+                                    .bind("loop_var")))
+                .bind("for_loop"),
+            this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -31,7 +31,8 @@ class PerformanceForLoopCopyRule : public Rule {
             }
             Finding finding;
             finding.ruleId = id();
-            finding.message = "Loop variable is copied but could be a const reference (const auto&)";
+            finding.message =
+                "Loop variable is copied but could be a const reference (const auto&)";
             finding.severity = defaultSeverity();
             finding.category = category();
 

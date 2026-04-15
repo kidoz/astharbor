@@ -17,10 +17,9 @@ class SecurityMissingReturnValueCheckRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName(
-                         "setuid", "setgid", "seteuid", "setegid",
-                         "setresuid", "setresgid",
-                         "::setuid", "::setgid", "::seteuid", "::setegid"))))
+            callExpr(callee(functionDecl(hasAnyName("setuid", "setgid", "seteuid", "setegid",
+                                                    "setresuid", "setresgid", "::setuid",
+                                                    "::setgid", "::seteuid", "::setegid"))))
                 .bind("privilege_call"),
             this);
     }
@@ -45,9 +44,10 @@ class SecurityMissingReturnValueCheckRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = FunctionName +
-                          "() return value is not checked — failure to drop privileges silently is a security "
-                          "vulnerability (CWE-273)";
+        finding.message =
+            FunctionName +
+            "() return value is not checked — failure to drop privileges silently is a security "
+            "vulnerability (CWE-273)";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Call->getExprLoc()).str();

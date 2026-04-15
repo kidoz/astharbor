@@ -24,17 +24,15 @@ class BugproneCopyCtorNonConstRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            cxxConstructorDecl(
-                isCopyConstructor(),
-                hasParameter(0, parmVarDecl(hasType(
-                    lValueReferenceType(unless(pointee(isConstQualified())))))))
+            cxxConstructorDecl(isCopyConstructor(),
+                               hasParameter(0, parmVarDecl(hasType(lValueReferenceType(
+                                                   unless(pointee(isConstQualified())))))))
                 .bind("bad_copy_ctor"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Ctor =
-            Result.Nodes.getNodeAs<clang::CXXConstructorDecl>("bad_copy_ctor");
+        const auto *Ctor = Result.Nodes.getNodeAs<clang::CXXConstructorDecl>("bad_copy_ctor");
         if (Ctor == nullptr || Result.SourceManager == nullptr) {
             return;
         }
@@ -42,8 +40,7 @@ class BugproneCopyCtorNonConstRule : public Rule {
             return;
         }
         emitFinding(Ctor->getLocation(), *Result.SourceManager,
-                    "Copy constructor of '" +
-                        Ctor->getParent()->getNameAsString() +
+                    "Copy constructor of '" + Ctor->getParent()->getNameAsString() +
                         "' takes a non-const reference — use 'const " +
                         Ctor->getParent()->getNameAsString() + " &'");
     }

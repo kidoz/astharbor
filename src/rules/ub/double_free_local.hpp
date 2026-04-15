@@ -37,13 +37,11 @@ class UbDoubleFreeLocalRule : public Rule {
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *FirstDelete =
-            Result.Nodes.getNodeAs<clang::CXXDeleteExpr>("first_delete");
+        const auto *FirstDelete = Result.Nodes.getNodeAs<clang::CXXDeleteExpr>("first_delete");
         const auto *DeletedVar = Result.Nodes.getNodeAs<clang::VarDecl>("deleted_var");
         const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
         if (FirstDelete == nullptr || DeletedVar == nullptr || Func == nullptr ||
-            !Func->hasBody() || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+            !Func->hasBody() || Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (!DeletedVar->hasLocalStorage()) {
@@ -65,9 +63,7 @@ class UbDoubleFreeLocalRule : public Rule {
 
         auto reportLoc = cfg::forwardReachable(
             start->first, start->second + 1,
-            [&](const clang::Stmt *stmt) {
-                return cfg::isAssignmentTo(stmt, DeletedVar);
-            },
+            [&](const clang::Stmt *stmt) { return cfg::isAssignmentTo(stmt, DeletedVar); },
             [&](const clang::Stmt *stmt) {
                 return findSecondDeleteLocation(stmt, DeletedVar, FirstDelete)
                     .value_or(clang::SourceLocation{});
@@ -89,8 +85,8 @@ class UbDoubleFreeLocalRule : public Rule {
     static std::optional<clang::SourceLocation>
     findSecondDeleteLocation(const clang::Stmt *stmt, const clang::VarDecl *targetVar,
                              const clang::CXXDeleteExpr *excludedDelete) {
-        const clang::Stmt *found = cfg::findFirstDescendantIf(
-            stmt, [targetVar, excludedDelete](const clang::Stmt *node) {
+        const clang::Stmt *found =
+            cfg::findFirstDescendantIf(stmt, [targetVar, excludedDelete](const clang::Stmt *node) {
                 return node != excludedDelete && cfg::isDeleteOf(node, targetVar);
             });
         if (found == nullptr) {

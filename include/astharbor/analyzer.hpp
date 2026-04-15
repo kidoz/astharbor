@@ -11,9 +11,8 @@ namespace astharbor {
 
 inline std::string generateRunId() {
     auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         now.time_since_epoch())
-                         .count();
+    auto timestamp =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     std::ostringstream stream;
     stream << "run-" << std::hex << timestamp;
     return stream.str();

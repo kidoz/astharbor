@@ -26,41 +26,35 @@ namespace astharbor {
 class IncludeTrackingCallbacks : public clang::PPCallbacks {
   public:
     IncludeTrackingCallbacks(std::set<std::string> &deps,
-                              std::map<std::string, std::string> &fileAliases)
+                             std::map<std::string, std::string> &fileAliases)
         : deps(deps), fileAliases(fileAliases) {}
 
     // LLVM 19 split `const Module *Imported` into `const Module
     // *SuggestedModule` + `bool ModuleImported`. Both signatures call
     // the same body via `recordInclude`.
 #if LLVM_VERSION_MAJOR >= 19
-    void InclusionDirective(clang::SourceLocation /*HashLoc*/,
-                             const clang::Token & /*IncludeTok*/,
-                             llvm::StringRef /*FileName*/, bool /*IsAngled*/,
-                             clang::CharSourceRange /*FilenameRange*/,
-                             clang::OptionalFileEntryRef File,
-                             llvm::StringRef /*SearchPath*/,
-                             llvm::StringRef /*RelativePath*/,
-                             const clang::Module * /*SuggestedModule*/,
-                             bool /*ModuleImported*/,
-                             clang::SrcMgr::CharacteristicKind FileType) override {
+    void InclusionDirective(clang::SourceLocation /*HashLoc*/, const clang::Token & /*IncludeTok*/,
+                            llvm::StringRef /*FileName*/, bool /*IsAngled*/,
+                            clang::CharSourceRange /*FilenameRange*/,
+                            clang::OptionalFileEntryRef File, llvm::StringRef /*SearchPath*/,
+                            llvm::StringRef /*RelativePath*/,
+                            const clang::Module * /*SuggestedModule*/, bool /*ModuleImported*/,
+                            clang::SrcMgr::CharacteristicKind FileType) override {
         recordInclude(File, FileType);
     }
 #else
-    void InclusionDirective(clang::SourceLocation /*HashLoc*/,
-                             const clang::Token & /*IncludeTok*/,
-                             llvm::StringRef /*FileName*/, bool /*IsAngled*/,
-                             clang::CharSourceRange /*FilenameRange*/,
-                             clang::OptionalFileEntryRef File,
-                             llvm::StringRef /*SearchPath*/,
-                             llvm::StringRef /*RelativePath*/,
-                             const clang::Module * /*Imported*/,
-                             clang::SrcMgr::CharacteristicKind FileType) override {
+    void InclusionDirective(clang::SourceLocation /*HashLoc*/, const clang::Token & /*IncludeTok*/,
+                            llvm::StringRef /*FileName*/, bool /*IsAngled*/,
+                            clang::CharSourceRange /*FilenameRange*/,
+                            clang::OptionalFileEntryRef File, llvm::StringRef /*SearchPath*/,
+                            llvm::StringRef /*RelativePath*/, const clang::Module * /*Imported*/,
+                            clang::SrcMgr::CharacteristicKind FileType) override {
         recordInclude(File, FileType);
     }
 #endif
 
     void recordInclude(clang::OptionalFileEntryRef File,
-                        clang::SrcMgr::CharacteristicKind FileType) {
+                       clang::SrcMgr::CharacteristicKind FileType) {
         if (!File) {
             return;
         }
@@ -93,15 +87,13 @@ class IncludeTrackingCallbacks : public clang::PPCallbacks {
 /// caller can consume after `ClangTool::run` returns.
 class MatchFinderWithDepsAction : public clang::ASTFrontendAction {
   public:
-    MatchFinderWithDepsAction(
-        clang::ast_matchers::MatchFinder *finder,
-        std::map<std::string, std::vector<std::string>> *depsByFile,
-        std::map<std::string, std::string> *fileAliases)
+    MatchFinderWithDepsAction(clang::ast_matchers::MatchFinder *finder,
+                              std::map<std::string, std::vector<std::string>> *depsByFile,
+                              std::map<std::string, std::string> *fileAliases)
         : finder(finder), depsByFile(depsByFile), fileAliases(fileAliases) {}
 
-    std::unique_ptr<clang::ASTConsumer>
-    CreateASTConsumer(clang::CompilerInstance &compilerInstance,
-                      llvm::StringRef file) override {
+    std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance &compilerInstance,
+                                                          llvm::StringRef file) override {
         currentFile = file.str();
         currentDeps.clear();
         compilerInstance.getPreprocessor().addPPCallbacks(
@@ -119,10 +111,8 @@ class MatchFinderWithDepsAction : public clang::ASTFrontendAction {
             // the `--incremental` hash map). Also seed the alias map
             // with every short-name Clang saw for the main file so
             // finding paths can be normalized after tool.run().
-            if (auto mainFile =
-                    sourceManager.getFileEntryRefForID(sourceManager.getMainFileID())) {
-                std::string realPath =
-                    mainFile->getFileEntry().tryGetRealPathName().str();
+            if (auto mainFile = sourceManager.getFileEntryRefForID(sourceManager.getMainFileID())) {
+                std::string realPath = mainFile->getFileEntry().tryGetRealPathName().str();
                 std::string name = mainFile->getName().str();
                 if (!realPath.empty()) {
                     key = realPath;
@@ -155,15 +145,13 @@ class MatchFinderWithDepsAction : public clang::ASTFrontendAction {
 /// ClangTool calls `create()` once per source file.
 class MatchFinderWithDepsFactory : public clang::tooling::FrontendActionFactory {
   public:
-    MatchFinderWithDepsFactory(
-        clang::ast_matchers::MatchFinder *finder,
-        std::map<std::string, std::vector<std::string>> *depsByFile,
-        std::map<std::string, std::string> *fileAliases)
+    MatchFinderWithDepsFactory(clang::ast_matchers::MatchFinder *finder,
+                               std::map<std::string, std::vector<std::string>> *depsByFile,
+                               std::map<std::string, std::string> *fileAliases)
         : finder(finder), depsByFile(depsByFile), fileAliases(fileAliases) {}
 
     std::unique_ptr<clang::FrontendAction> create() override {
-        return std::make_unique<MatchFinderWithDepsAction>(finder, depsByFile,
-                                                            fileAliases);
+        return std::make_unique<MatchFinderWithDepsAction>(finder, depsByFile, fileAliases);
     }
 
   private:

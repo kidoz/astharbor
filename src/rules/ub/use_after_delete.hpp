@@ -25,25 +25,18 @@ class UbUseAfterDeleteRule : public Rule {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
             cxxDeleteExpr(
-                hasDescendant(declRefExpr(to(
-                    varDecl(hasLocalStorage()).bind("deleted_var")))),
-                hasAncestor(
-                    functionDecl(isDefinition()).bind("enclosing_func")))
+                hasDescendant(declRefExpr(to(varDecl(hasLocalStorage()).bind("deleted_var")))),
+                hasAncestor(functionDecl(isDefinition()).bind("enclosing_func")))
                 .bind("delete_expr"),
             this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *DeleteExpr =
-            Result.Nodes.getNodeAs<clang::CXXDeleteExpr>("delete_expr");
-        const auto *DeletedVar =
-            Result.Nodes.getNodeAs<clang::VarDecl>("deleted_var");
-        const auto *Func =
-            Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
-        if (DeleteExpr == nullptr || DeletedVar == nullptr ||
-            Func == nullptr || !Func->hasBody() ||
-            Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        const auto *DeleteExpr = Result.Nodes.getNodeAs<clang::CXXDeleteExpr>("delete_expr");
+        const auto *DeletedVar = Result.Nodes.getNodeAs<clang::VarDecl>("deleted_var");
+        const auto *Func = Result.Nodes.getNodeAs<clang::FunctionDecl>("enclosing_func");
+        if (DeleteExpr == nullptr || DeletedVar == nullptr || Func == nullptr || !Func->hasBody() ||
+            Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (isInSystemHeader(DeleteExpr->getExprLoc(), *Result.SourceManager)) {
@@ -61,50 +54,38 @@ class UbUseAfterDeleteRule : public Rule {
 
         auto reportLoc = cfg::forwardReachable(
             start->first, start->second + 1,
-            [&](const clang::Stmt *stmt) {
-                return cfg::isAssignmentTo(stmt, DeletedVar);
-            },
+            [&](const clang::Stmt *stmt) { return cfg::isAssignmentTo(stmt, DeletedVar); },
             [&](const clang::Stmt *stmt) -> clang::SourceLocation {
                 const clang::Stmt *found = cfg::findFirstDescendantIf(
-                    stmt,
-                    [DeletedVar, DeleteExpr](const clang::Stmt *node) {
+                    stmt, [DeletedVar, DeleteExpr](const clang::Stmt *node) {
                         if (node == DeleteExpr) {
                             return false;
                         }
-                        if (const auto *member =
-                                llvm::dyn_cast<clang::MemberExpr>(node);
+                        if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(node);
                             member != nullptr && member->isArrow() &&
                             cfg::isDirectRefTo(member->getBase(), DeletedVar)) {
                             return true;
                         }
-                        if (const auto *unary =
-                                llvm::dyn_cast<clang::UnaryOperator>(node);
-                            unary != nullptr &&
-                            unary->getOpcode() == clang::UO_Deref &&
+                        if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(node);
+                            unary != nullptr && unary->getOpcode() == clang::UO_Deref &&
                             cfg::isDirectRefTo(unary->getSubExpr(), DeletedVar)) {
                             return true;
                         }
-                        if (const auto *sub =
-                                llvm::dyn_cast<clang::ArraySubscriptExpr>(node);
-                            sub != nullptr &&
-                            cfg::isDirectRefTo(sub->getBase(), DeletedVar)) {
+                        if (const auto *sub = llvm::dyn_cast<clang::ArraySubscriptExpr>(node);
+                            sub != nullptr && cfg::isDirectRefTo(sub->getBase(), DeletedVar)) {
                             return true;
                         }
-                        if (const auto *call =
-                                llvm::dyn_cast<clang::CallExpr>(node);
+                        if (const auto *call = llvm::dyn_cast<clang::CallExpr>(node);
                             call != nullptr) {
-                            for (unsigned idx = 0; idx < call->getNumArgs();
-                                 ++idx) {
-                                if (cfg::isDirectRefTo(call->getArg(idx),
-                                                        DeletedVar)) {
+                            for (unsigned idx = 0; idx < call->getNumArgs(); ++idx) {
+                                if (cfg::isDirectRefTo(call->getArg(idx), DeletedVar)) {
                                     return true;
                                 }
                             }
                         }
                         return false;
                     });
-                return found != nullptr ? found->getBeginLoc()
-                                        : clang::SourceLocation{};
+                return found != nullptr ? found->getBeginLoc() : clang::SourceLocation{};
             });
 
         if (!reportLoc || reportLoc->isInvalid()) {

@@ -45,8 +45,7 @@ class BugproneSwappedArgumentsRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(unless(cxxOperatorCallExpr()),
-                     callee(functionDecl().bind("callee_decl")))
+            callExpr(unless(cxxOperatorCallExpr()), callee(functionDecl().bind("callee_decl")))
                 .bind("call"),
             this);
     }
@@ -61,8 +60,7 @@ class BugproneSwappedArgumentsRule : public Rule {
             return;
         }
         const auto params = Callee->parameters();
-        const unsigned numFixed =
-            std::min<unsigned>(Call->getNumArgs(), params.size());
+        const unsigned numFixed = std::min<unsigned>(Call->getNumArgs(), params.size());
         if (numFixed < 2) {
             return;
         }
@@ -95,8 +93,7 @@ class BugproneSwappedArgumentsRule : public Rule {
             if (argName.size() < 2) {
                 continue;
             }
-            candidates.push_back({.index = index, .argName = argName,
-                                   .paramName = paramName});
+            candidates.push_back({.index = index, .argName = argName, .paramName = paramName});
         }
         if (candidates.size() < 2) {
             return;
@@ -108,16 +105,13 @@ class BugproneSwappedArgumentsRule : public Rule {
                 const auto &rhs = candidates[inner];
                 // A match requires each argument's variable name to be
                 // identical to the OTHER position's parameter name.
-                if (lhs.argName != rhs.argName &&
-                    lhs.argName == rhs.paramName && rhs.argName == lhs.paramName) {
-                    emitFinding(
-                        Call->getArg(lhs.index)->getBeginLoc(),
-                        *Result.SourceManager,
-                        "Arguments '" + lhs.argName.str() + "' and '" +
-                            rhs.argName.str() +
-                            "' appear swapped: they match the parameter names '" +
-                            rhs.paramName.str() + "' and '" + lhs.paramName.str() +
-                            "' of the opposite position");
+                if (lhs.argName != rhs.argName && lhs.argName == rhs.paramName &&
+                    rhs.argName == lhs.paramName) {
+                    emitFinding(Call->getArg(lhs.index)->getBeginLoc(), *Result.SourceManager,
+                                "Arguments '" + lhs.argName.str() + "' and '" + rhs.argName.str() +
+                                    "' appear swapped: they match the parameter names '" +
+                                    rhs.paramName.str() + "' and '" + lhs.paramName.str() +
+                                    "' of the opposite position");
                     return; // one finding per call site
                 }
             }

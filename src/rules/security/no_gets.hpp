@@ -15,8 +15,7 @@ class SecurityNoGetsRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         Finder.addMatcher(
-            callExpr(callee(functionDecl(hasAnyName("gets", "::gets")))).bind("gets_call"),
-            this);
+            callExpr(callee(functionDecl(hasAnyName("gets", "::gets")))).bind("gets_call"), this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
@@ -29,7 +28,8 @@ class SecurityNoGetsRule : public Rule {
 
         Finding finding;
         finding.ruleId = id();
-        finding.message = "Call to gets() is inherently unsafe with no bounds checking — use fgets() or getline() instead";
+        finding.message = "Call to gets() is inherently unsafe with no bounds checking — use "
+                          "fgets() or getline() instead";
         finding.severity = defaultSeverity();
         finding.category = category();
         finding.file = sourceManager.getFilename(Call->getExprLoc()).str();

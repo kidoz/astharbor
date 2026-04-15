@@ -50,8 +50,7 @@ class RunStore {
         if (!in) {
             return std::nullopt;
         }
-        std::string content((std::istreambuf_iterator<char>(in)),
-                            std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         auto parsed = llvm::json::parse(content);
         if (!parsed) {
             llvm::consumeError(parsed.takeError());

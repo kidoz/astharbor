@@ -27,25 +27,20 @@ class PortabilityPointerIntegerCastRule : public Rule {
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
         // C-style cast: (int)ptr or (void*)i
-        Finder.addMatcher(
-            cStyleCastExpr(anyOf(
-                hasCastKind(clang::CK_PointerToIntegral),
-                hasCastKind(clang::CK_IntegralToPointer)))
-                .bind("cast"),
-            this);
+        Finder.addMatcher(cStyleCastExpr(anyOf(hasCastKind(clang::CK_PointerToIntegral),
+                                               hasCastKind(clang::CK_IntegralToPointer)))
+                              .bind("cast"),
+                          this);
         // reinterpret_cast<int>(ptr) or reinterpret_cast<void*>(i)
-        Finder.addMatcher(
-            cxxReinterpretCastExpr(anyOf(
-                hasCastKind(clang::CK_PointerToIntegral),
-                hasCastKind(clang::CK_IntegralToPointer)))
-                .bind("cast"),
-            this);
+        Finder.addMatcher(cxxReinterpretCastExpr(anyOf(hasCastKind(clang::CK_PointerToIntegral),
+                                                       hasCastKind(clang::CK_IntegralToPointer)))
+                              .bind("cast"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
         const auto *Cast = Result.Nodes.getNodeAs<clang::ExplicitCastExpr>("cast");
-        if (Cast == nullptr || Result.SourceManager == nullptr ||
-            Result.Context == nullptr) {
+        if (Cast == nullptr || Result.SourceManager == nullptr || Result.Context == nullptr) {
             return;
         }
         if (isInSystemHeader(Cast->getExprLoc(), *Result.SourceManager)) {
@@ -57,16 +52,13 @@ class PortabilityPointerIntegerCastRule : public Rule {
         if (destType.isNull() || srcType.isNull()) {
             return;
         }
-        const clang::QualType ptrType =
-            destType->isPointerType() ? destType : srcType;
-        const clang::QualType intType =
-            destType->isIntegerType() ? destType : srcType;
+        const clang::QualType ptrType = destType->isPointerType() ? destType : srcType;
+        const clang::QualType intType = destType->isIntegerType() ? destType : srcType;
         if (!ptrType->isPointerType() || !intType->isIntegerType()) {
             return;
         }
         // Allow casts to/from intptr_t / uintptr_t-sized integers.
-        const uint64_t ptrWidth =
-            Result.Context->getTypeSize(Result.Context->VoidPtrTy);
+        const uint64_t ptrWidth = Result.Context->getTypeSize(Result.Context->VoidPtrTy);
         const uint64_t intWidth = Result.Context->getTypeSize(intType);
         if (intWidth >= ptrWidth) {
             return;

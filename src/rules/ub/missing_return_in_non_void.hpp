@@ -18,16 +18,14 @@ class UbMissingReturnInNonVoidRule : public Rule {
 
     void registerMatchers(clang::ast_matchers::MatchFinder &Finder) override {
         using namespace clang::ast_matchers;
-        Finder.addMatcher(
-            functionDecl(isDefinition(), unless(returns(voidType())), unless(isMain()),
-                         unless(hasDescendant(returnStmt())))
-                .bind("missing_return_func"),
-            this);
+        Finder.addMatcher(functionDecl(isDefinition(), unless(returns(voidType())),
+                                       unless(isMain()), unless(hasDescendant(returnStmt())))
+                              .bind("missing_return_func"),
+                          this);
     }
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override {
-        const auto *Function =
-            Result.Nodes.getNodeAs<clang::FunctionDecl>("missing_return_func");
+        const auto *Function = Result.Nodes.getNodeAs<clang::FunctionDecl>("missing_return_func");
         if (Function == nullptr || Result.SourceManager == nullptr) {
             return;
         }
@@ -36,8 +34,8 @@ class UbMissingReturnInNonVoidRule : public Rule {
         }
         // Skip constructors, destructors, conversion operators, deleted/defaulted
         if (llvm::isa<clang::CXXConstructorDecl>(Function) ||
-            llvm::isa<clang::CXXDestructorDecl>(Function) ||
-            Function->isDeleted() || Function->isDefaulted()) {
+            llvm::isa<clang::CXXDestructorDecl>(Function) || Function->isDeleted() ||
+            Function->isDefaulted()) {
             return;
         }
         // Skip if the return type is dependent (templates)
