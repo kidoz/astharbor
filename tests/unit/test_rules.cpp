@@ -10,13 +10,21 @@
 #include "../../src/rules/bugprone/narrow_wide_char_mismatch.hpp"
 #include "../../src/rules/bugprone/abrupt_termination.hpp"
 #include "../../src/rules/bugprone/copy_ctor_non_const.hpp"
+#include "../../src/rules/bugprone/ignored_return_value.hpp"
+#include "../../src/rules/bugprone/iterator_invalidation.hpp"
+#include "../../src/rules/bugprone/memcpy_overlap.hpp"
+#include "../../src/rules/bugprone/sizeof_expression.hpp"
 #include "../../src/rules/bugprone/unsequenced_modification.hpp"
 #include "../../src/rules/portability/pointer_integer_cast.hpp"
 #include "../../src/rules/ub/use_after_delete.hpp"
 #include "../../src/rules/bugprone/unsafe_memory_operation.hpp"
 #include "../../src/rules/security/integer_overflow_in_malloc.hpp"
+#include "../../src/rules/security/strncpy_truncation.hpp"
+#include "../../src/rules/security/unchecked_allocation_result.hpp"
 #include "../../src/rules/performance/string_concat_in_loop.hpp"
+#include "../../src/rules/performance/pass_by_value_expensive.hpp"
 #include "../../src/rules/modernize/use_override.hpp"
+#include "../../src/rules/modernize/use_std_array.hpp"
 #include "../../src/rules/portability/vla_in_cxx.hpp"
 #include "../../src/rules/portability/c_style_variadic.hpp"
 #include "../../src/rules/readability/container_size_empty.hpp"
@@ -31,8 +39,10 @@
 #include "../../src/rules/ub/double_free_local.hpp"
 #include "../../src/rules/ub/uninitialized_local.hpp"
 #include "../../src/rules/ub/null_deref_after_check.hpp"
+#include "../../src/rules/ub/null_deref_local.hpp"
 #include "../../src/rules/ub/dangling_reference.hpp"
 #include "../../src/rules/ub/virtual_call_in_ctor_dtor.hpp"
+#include "../../src/rules/resource/file_handle_leak.hpp"
 #include "../../src/rules/resource/leak_on_throw.hpp"
 #include "../../src/rules/ub/delete_non_virtual_dtor.hpp"
 #include "../../src/rules/ub/division_by_zero_literal.hpp"
@@ -2678,4 +2688,208 @@ TEST_CASE("BugproneUnsequencedModificationRuleTest.IgnoresDifferentVariables") {
 
     REQUIRE(result.success);
     CHECK(result.findings.empty());
+}
+
+TEST_CASE("SecurityUncheckedAllocationResultRuleTest.DetectsUncheckedMallocDeref") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityUncheckedAllocationResultRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            int test() {
+                int *p = (int *)malloc(4);
+                *p = 1;
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "security/unchecked-allocation-result");
+}
+
+TEST_CASE("SecurityUncheckedAllocationResultRuleTest.IgnoresCheckedMalloc") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::SecurityUncheckedAllocationResultRule>(),
+        R"cpp(
+            extern "C" void *malloc(unsigned long);
+            int test() {
+                int *p = (int *)malloc(4);
+                if (p == 0) return 0;
+                *p = 1;
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("ResourceFileHandleLeakRuleTest.DetectsMissingFclose") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceFileHandleLeakRule>(),
+                                       R"cpp(
+            struct FILE;
+            extern "C" FILE *fopen(const char *, const char *);
+            int test() {
+                FILE *f = fopen("x", "r");
+                return f != nullptr;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "resource/file-handle-leak");
+}
+
+TEST_CASE("ResourceFileHandleLeakRuleTest.IgnoresClosedFile") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ResourceFileHandleLeakRule>(),
+                                       R"cpp(
+            struct FILE;
+            extern "C" FILE *fopen(const char *, const char *);
+            extern "C" int fclose(FILE *);
+            int test() {
+                FILE *f = fopen("x", "r");
+                return fclose(f);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    CHECK(result.findings.empty());
+}
+
+TEST_CASE("BugproneIgnoredReturnValueRuleTest.DetectsIgnoredSnprintf") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneIgnoredReturnValueRule>(),
+        R"cpp(
+            extern "C" int snprintf(char *, unsigned long, const char *, ...);
+            void test(char *buffer) {
+                snprintf(buffer, 16, "%s", "x");
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/ignored-return-value");
+}
+
+TEST_CASE("SecurityStrncpyTruncationRuleTest.DetectsSizeofDestination") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::SecurityStrncpyTruncationRule>(),
+                                       R"cpp(
+            extern "C" char *strncpy(char *, const char *, unsigned long);
+            void test(const char *src) {
+                char dst[8];
+                strncpy(dst, src, sizeof(dst));
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "security/strncpy-truncation");
+}
+
+TEST_CASE("BugproneMemcpyOverlapRuleTest.DetectsSameArrayBase") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneMemcpyOverlapRule>(),
+                                       R"cpp(
+            extern "C" void *memcpy(void *, const void *, unsigned long);
+            void test() {
+                char data[16];
+                memcpy(&data[1], &data[0], 8);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/memcpy-overlap");
+}
+
+TEST_CASE("BugproneSizeofExpressionRuleTest.DetectsSizeofPointer") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::BugproneSizeofExpressionRule>(),
+                                       R"cpp(
+            unsigned long test(int *p) {
+                return sizeof(p);
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/sizeof-expression");
+}
+
+TEST_CASE("UbNullDerefLocalRuleTest.DetectsNullLocalDeref") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::UbNullDerefLocalRule>(),
+                                       R"cpp(
+            int test() {
+                int *p = nullptr;
+                return *p;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "ub/null-deref-local");
+}
+
+TEST_CASE("BugproneIteratorInvalidationRuleTest.DetectsUseAfterPushBack") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::BugproneIteratorInvalidationRule>(),
+        R"cpp(
+            namespace std {
+            template <class T> struct vector {
+                struct iterator {
+                    T &operator*() const;
+                };
+                iterator begin();
+                void push_back(const T &);
+            };
+            }
+            int test(std::vector<int> &values) {
+                auto it = values.begin();
+                values.push_back(1);
+                return *it;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "bugprone/iterator-invalidation");
+}
+
+TEST_CASE("ModernizeUseStdArrayRuleTest.DetectsLocalFixedArray") {
+    const auto result =
+        astharbor::test::runRuleOnCode(std::make_unique<astharbor::ModernizeUseStdArrayRule>(),
+                                       R"cpp(
+            int test() {
+                int values[4] = {};
+                return values[0];
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "modernize/use-std-array");
+}
+
+TEST_CASE("PerformancePassByValueExpensiveRuleTest.DetectsLargeRecordParam") {
+    const auto result = astharbor::test::runRuleOnCode(
+        std::make_unique<astharbor::PerformancePassByValueExpensiveRule>(),
+        R"cpp(
+            struct Big {
+                long a;
+                long b;
+                long c;
+                long d;
+            };
+            long test(Big value) {
+                return value.a;
+            }
+        )cpp");
+
+    REQUIRE(result.success);
+    REQUIRE(result.findings.size() == 1u);
+    CHECK(result.findings.front().ruleId == "performance/pass-by-value-expensive");
 }

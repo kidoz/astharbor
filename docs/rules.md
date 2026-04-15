@@ -25,6 +25,7 @@ pure AST matcher.
 | `ub/missing-return-in-non-void` | Non-`void` function with a control-flow path that exits without `return`. | CERT MSC37-C, CWE-758 |
 | `ub/move-of-const` | `std::move` on a `const` lvalue — silently produces a copy, not a move. | `clang-tidy` `performance-move-const-arg` |
 | `ub/new-delete-array-mismatch` | `delete` paired with `new[]` or `delete[]` paired with `new`. | CERT MEM51-CPP, CWE-762 |
+| `ub/null-deref-local` | **(CFG)** Local pointer initialized to null is dereferenced before reassignment. | CERT EXP34-C, CWE-476 |
 | `ub/noreturn-function-returns` | A `[[noreturn]]` function with a control-flow path that can return. | CERT MSC53-CPP |
 | `ub/null-deref-after-check` | **(CFG)** Pointer dereferenced inside the then-branch of a null check. | CERT EXP34-C, CWE-476 |
 | `ub/pointer-arithmetic-on-polymorphic` | Array subscripting / pointer arithmetic on a pointer-to-base type. | CERT CTR56-CPP, CWE-843 |
@@ -58,6 +59,8 @@ pure AST matcher.
 | `security/no-strcpy-strcat` | `strcpy`/`strcat`/`wcscpy`/`wcscat` — unbounded string copies. | CERT STR31-C, CWE-120 |
 | `security/no-system-call` | `system()` — command injection risk. | CERT ENV33-C, CWE-78 |
 | `security/signed-arith-in-alloc` | Signed integer arithmetic (`+`/`-`/`*`) used as allocation size. | CERT INT32-C, CWE-190 |
+| `security/strncpy-truncation` | `strncpy(dst, src, sizeof(dst))` may leave `dst` unterminated after truncation. | CERT STR32-C, CWE-170 |
+| `security/unchecked-allocation-result` | Allocation result from `malloc`/`calloc`/`realloc` or nothrow `new` is used without an obvious null check. | CERT MEM32-C, CWE-252 |
 | `security/unchecked-realloc` | `p = realloc(p, n)` leaks `p` on allocation failure. | CERT MEM04-C, CWE-401 |
 | `security/unsafe-printf-format` | Non-literal format string in `printf`-family calls. | CERT FIO30-C, CWE-134 |
 | `security/unsafe-temp-file` | `tmpnam`/`tempnam`/`mktemp` — predictable / race-prone temp files. | CERT FIO21-C, CWE-377 |
@@ -70,8 +73,12 @@ pure AST matcher.
 | `bugprone/abrupt-termination` | `abort()`/`terminate()`/`exit()` called from non-main code. | CERT ERR50-CPP |
 | `bugprone/char-eof-comparison` | `getchar`/`getc`/`fgetc` return narrowed to `char` — loses EOF sentinel. | CERT FIO34-C, CWE-197 |
 | `bugprone/copy-ctor-non-const` | Copy constructor takes a non-const reference source parameter. | CERT OOP58-CPP |
+| `bugprone/ignored-return-value` | Return value of an error-reporting C/POSIX API is discarded. | CERT ERR33-C, CWE-252 |
+| `bugprone/iterator-invalidation` | Iterator from a local container is used after a visible mutating call that may invalidate it. | CERT CTR51-CPP |
 | `bugprone/narrow-wide-char-mismatch` | Narrow-string function called with wide-char source or vice versa. | CERT STR38-C, CWE-704 |
 | `bugprone/identical-expressions` | The same variable on both sides of a comparison or arithmetic operator. | PVS-like expression sanity check |
+| `bugprone/memcpy-overlap` | `memcpy()` source and destination are obvious regions of the same object. | CERT EXP37-C, CWE-475 |
+| `bugprone/sizeof-expression` | `sizeof` is applied to a pointer expression or `this`. | CERT EXP01-C, CWE-467 |
 | `bugprone/sizeof-pointer-in-memfunc` | `memcpy`/`memmove`/etc. with `sizeof(ptr)` for the length. | CERT EXP01-C, CWE-467 |
 | `bugprone/suspicious-memset` | `memset` with `sizeof(pointer)` as the size. | `clang-tidy` `bugprone-sizeof-expression` |
 | `bugprone/unsequenced-modification` | Same variable modified twice in one expression without a sequence point. | CERT EXP30-C, CWE-758 |
@@ -83,12 +90,14 @@ pure AST matcher.
 
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
+| `resource/file-handle-leak` | Local `FILE*` or file descriptor opened by `fopen`/`open`/`socket` is not closed in the same function. | CERT FIO42-C, CWE-772 |
 | `resource/leak-on-throw` | **(CFG)** Raw-new'd local pointer not deleted before a reachable `throw`. | CERT MEM31-C, CWE-401 |
 
 ### `modernize/` — Modernization
 
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
+| `modernize/use-std-array` | Local fixed-size C arrays in C++ that can usually be expressed as `std::array`. | C++ Core Guidelines SL.con.1 |
 | `modernize/use-nullptr` | `NULL` or `0` used where `nullptr` should be used. | `clang-tidy` `modernize-use-nullptr` |
 | `modernize/use-override` | Overriding virtual methods that don't spell the `override` keyword. | `clang-tidy` `modernize-use-override` |
 
@@ -97,6 +106,7 @@ pure AST matcher.
 | Rule ID | What it detects | Reference |
 | --- | --- | --- |
 | `performance/for-loop-copy` | Range-for loop variables copying record types instead of binding a reference. | `clang-tidy` `performance-for-range-copy` |
+| `performance/pass-by-value-expensive` | Large record parameters passed by value instead of by reference. | `clang-tidy` `performance-unnecessary-value-param` |
 | `performance/string-concat-in-loop` | `s = s + other` on a `std::basic_string` inside a loop — quadratic. | `clang-tidy` `performance-inefficient-string-concatenation` |
 
 ### `readability/`

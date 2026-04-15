@@ -9,11 +9,17 @@
 #include "../rules/bugprone/narrow_wide_char_mismatch.hpp"
 #include "../rules/bugprone/abrupt_termination.hpp"
 #include "../rules/bugprone/copy_ctor_non_const.hpp"
+#include "../rules/bugprone/ignored_return_value.hpp"
 #include "../rules/bugprone/unsequenced_modification.hpp"
 #include "../rules/bugprone/unsafe_memory_operation.hpp"
+#include "../rules/bugprone/iterator_invalidation.hpp"
+#include "../rules/bugprone/memcpy_overlap.hpp"
+#include "../rules/bugprone/sizeof_expression.hpp"
 #include "../rules/modernize/use_nullptr.hpp"
 #include "../rules/modernize/use_override.hpp"
+#include "../rules/modernize/use_std_array.hpp"
 #include "../rules/performance/for_loop_copy.hpp"
+#include "../rules/performance/pass_by_value_expensive.hpp"
 #include "../rules/performance/string_concat_in_loop.hpp"
 #include "../rules/readability/const_return_type.hpp"
 #include "../rules/readability/container_size_empty.hpp"
@@ -35,6 +41,8 @@
 #include "../rules/security/large_stack_array.hpp"
 #include "../rules/security/integer_signedness_mismatch.hpp"
 #include "../rules/security/integer_overflow_in_malloc.hpp"
+#include "../rules/security/strncpy_truncation.hpp"
+#include "../rules/security/unchecked_allocation_result.hpp"
 #include "../rules/ub/missing_return_in_non_void.hpp"
 #include "../rules/ub/division_by_zero_literal.hpp"
 #include "../rules/ub/shift_by_negative.hpp"
@@ -63,8 +71,10 @@
 #include "../rules/ub/double_free_local.hpp"
 #include "../rules/ub/uninitialized_local.hpp"
 #include "../rules/ub/null_deref_after_check.hpp"
+#include "../rules/ub/null_deref_local.hpp"
 #include "../rules/ub/dangling_reference.hpp"
 #include "../rules/ub/virtual_call_in_ctor_dtor.hpp"
+#include "../rules/resource/file_handle_leak.hpp"
 #include "../rules/resource/leak_on_throw.hpp"
 
 namespace astharbor {
@@ -76,6 +86,7 @@ void registerBuiltinRules(RuleRegistry &registry) {
     registry.registerRule(std::make_unique<ReadabilityConstReturnTypeRule>());
     registry.registerRule(std::make_unique<PerformanceForLoopCopyRule>());
     registry.registerRule(std::make_unique<PerformanceStringConcatInLoopRule>());
+    registry.registerRule(std::make_unique<PerformancePassByValueExpensiveRule>());
     registry.registerRule(std::make_unique<ReadabilityContainerSizeEmptyRule>());
     registry.registerRule(std::make_unique<BugproneIdenticalExpressionsRule>());
     registry.registerRule(std::make_unique<BugproneSuspiciousMemsetRule>());
@@ -88,6 +99,10 @@ void registerBuiltinRules(RuleRegistry &registry) {
     registry.registerRule(std::make_unique<BugproneCopyCtorNonConstRule>());
     registry.registerRule(std::make_unique<BugproneUnsequencedModificationRule>());
     registry.registerRule(std::make_unique<BugproneUnsafeMemoryOperationRule>());
+    registry.registerRule(std::make_unique<BugproneIgnoredReturnValueRule>());
+    registry.registerRule(std::make_unique<BugproneIteratorInvalidationRule>());
+    registry.registerRule(std::make_unique<BugproneMemcpyOverlapRule>());
+    registry.registerRule(std::make_unique<BugproneSizeofExpressionRule>());
     registry.registerRule(std::make_unique<SecurityNoGetsRule>());
     registry.registerRule(std::make_unique<SecurityUnsafeTempFileRule>());
     registry.registerRule(std::make_unique<SecurityUnsafePrintfFormatRule>());
@@ -106,6 +121,8 @@ void registerBuiltinRules(RuleRegistry &registry) {
     registry.registerRule(std::make_unique<SecurityLargeStackArrayRule>());
     registry.registerRule(std::make_unique<SecurityIntegerSignednessMismatchRule>());
     registry.registerRule(std::make_unique<SecurityIntegerOverflowInMallocRule>());
+    registry.registerRule(std::make_unique<SecurityStrncpyTruncationRule>());
+    registry.registerRule(std::make_unique<SecurityUncheckedAllocationResultRule>());
     registry.registerRule(std::make_unique<UbMissingReturnInNonVoidRule>());
     registry.registerRule(std::make_unique<UbDivisionByZeroLiteralRule>());
     registry.registerRule(std::make_unique<UbShiftByNegativeRule>());
@@ -134,8 +151,11 @@ void registerBuiltinRules(RuleRegistry &registry) {
     registry.registerRule(std::make_unique<UbDoubleFreeLocalRule>());
     registry.registerRule(std::make_unique<UbUninitializedLocalRule>());
     registry.registerRule(std::make_unique<UbNullDerefAfterCheckRule>());
+    registry.registerRule(std::make_unique<UbNullDerefLocalRule>());
     registry.registerRule(std::make_unique<UbDanglingReferenceRule>());
     registry.registerRule(std::make_unique<UbVirtualCallInCtorDtorRule>());
+    registry.registerRule(std::make_unique<ModernizeUseStdArrayRule>());
+    registry.registerRule(std::make_unique<ResourceFileHandleLeakRule>());
     registry.registerRule(std::make_unique<ResourceLeakOnThrowRule>());
 }
 
