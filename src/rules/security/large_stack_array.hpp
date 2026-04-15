@@ -26,9 +26,16 @@ class SecurityLargeStackArrayRule : public Rule {
             Result.Context == nullptr) {
             return;
         }
+        if (isInSystemHeader(VarDeclaration->getLocation(), *Result.SourceManager)) {
+            return;
+        }
 
         const auto *ArrayType = Result.Context->getAsConstantArrayType(VarDeclaration->getType());
         if (ArrayType == nullptr) {
+            return;
+        }
+        if (ArrayType->getElementType().isNull() ||
+            ArrayType->getElementType()->isIncompleteType()) {
             return;
         }
 

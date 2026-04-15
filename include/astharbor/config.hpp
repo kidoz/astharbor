@@ -21,6 +21,7 @@ namespace astharbor {
 ///     Checks: "modernize,ub,-ub/sizeof-array-parameter"
 ///     HeaderFilterRegex: "^src/.*\\.hpp$"
 ///     Jobs: 4
+///     SourceScope: "auto"
 ///     Std: "c++20"
 ///     CompilerProfile: "auto"
 ///     Severity:
@@ -30,6 +31,7 @@ struct Config {
     std::string checks;
     std::string headerFilterRegex;
     unsigned jobs = 0;
+    std::string sourceScope;
     std::string std;
     std::string compilerProfile;
     std::map<std::string, std::string> severityOverrides;
@@ -56,6 +58,7 @@ template <> struct llvm::yaml::MappingTraits<astharbor::Config> {
         io.mapOptional("Checks", config.checks);
         io.mapOptional("HeaderFilterRegex", config.headerFilterRegex);
         io.mapOptional("Jobs", config.jobs);
+        io.mapOptional("SourceScope", config.sourceScope);
         io.mapOptional("Std", config.std);
         io.mapOptional("CompilerProfile", config.compilerProfile);
         io.mapOptional("Severity", config.severityOverrides);

@@ -124,7 +124,12 @@ source base.
 `CompilationDatabase`. When analyzing files, the CLI delegates to
 `CommonOptionsParser`, which walks upward from the current directory looking
 for `compile_commands.json`. If no sources are specified explicitly, the
-tool falls back to the compilation database's `getAllFiles()`.
+tool applies a source-selection policy before invoking Clang. For Meson
+builds, `--source-scope=auto` uses `meson-info/intro-targets.json` and
+`intro-tests.json` to select root project non-test targets, which keeps
+wrapped dependencies out of ordinary project scans. `--source-scope=project`
+includes root tests, and `--source-scope=all` falls back to every entry in
+the compilation database.
 
 ### Emitters
 

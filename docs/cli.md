@@ -4,7 +4,7 @@ ASTHarbor ships a single binary (`astharbor`) with five subcommands:
 `analyze`, `fix`, `rules`, `doctor`, and `compare`. All commands share a
 common option parser built on LLVM's `CommandLine` library. The `analyze`
 and `fix` commands additionally use Clang's `CommonOptionsParser` for
-source-path and compilation-database resolution.
+source-path and compiler-flag parsing.
 
 ## General Usage
 
@@ -12,9 +12,9 @@ source-path and compilation-database resolution.
 astharbor <command> [options] [<path>...] [-- <extra-compiler-flags>]
 ```
 
-The trailing `--` separator is **required** for `analyze` and `fix` because
-`CommonOptionsParser` uses it to delimit source paths from extra compiler
-flags. If you have no extra flags to pass, still include the trailing `--`:
+Use the trailing `--` separator only when passing extra compiler flags. A
+trailing bare `--` with no flags is accepted for compatibility but is not
+required:
 
 ```sh
 astharbor analyze src/main.cpp --
@@ -42,8 +42,9 @@ astharbor analyze [<path>...] [options] [-- <extra-compiler-flags>]
 ```
 
 If no source paths are supplied, the tool auto-discovers all files from the
-compilation database (`compile_commands.json`) resolved by Clang's
-`CommonOptionsParser`.
+compilation database (`compile_commands.json`). Meson builds are refined
+through `meson-info/intro-targets.json`: by default ASTHarbor analyzes root
+project non-test targets and skips subprojects such as wrapped dependencies.
 
 ### Options
 
@@ -54,6 +55,7 @@ compilation database (`compile_commands.json`) resolved by Clang's
 | `--save-run[=PATH]`          | Persist the result to disk so a later `fix --run-id` can reuse it. With no value, writes `~/.astharbor/runs/<runId>.json`.              | disabled |
 | `--jobs=N`                   | Run analysis across N parallel workers. Sources are split round-robin; each worker owns a fresh `RuleRegistry` and `ClangTool`; findings are merged and sorted deterministically. | `1`      |
 | `--changed-only`             | Intersect the source list with `git diff --name-only` (uncommitted + staged). Falls back to analyzing everything if git is unavailable. | disabled |
+| `--source-scope=SCOPE`       | Source set used when no paths are supplied: `auto`, `production`, `project`, or `all`. For Meson, `auto`/`production` use root non-test targets, `project` includes root test targets, and `all` uses every compile database entry including subprojects. | `auto` |
 | `--verbose`                  | Print per-file progress, active worker count, and timing to stderr.                                                                     | disabled |
 | `--std=VALUE`                | Language standard for single-file mode, e.g. `c++20`, `c17`. Prepended as `-std=<value>` via `ArgumentsAdjuster`.                        | unset    |
 | `--compiler-profile=PROFILE` | Compiler dialect profile: `auto` (default), `clang`, or `gcc`. The `gcc` profile inserts `-fgnu-keywords` and `-fgnu89-inline`.          | `auto`   |
@@ -97,6 +99,12 @@ Changed-only (CI pre-commit style):
 
 ```sh
 astharbor analyze --changed-only --format=json --
+```
+
+Analyze all entries from a compile database, including subprojects:
+
+```sh
+astharbor analyze -p build --source-scope=all --format=json
 ```
 
 Persist a run for later fixing:

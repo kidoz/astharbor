@@ -10,6 +10,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <set>
 #include <string>
@@ -122,6 +123,13 @@ static llvm::cl::opt<bool>
                 llvm::cl::init(false), llvm::cl::cat(ASTHarborCategory));
 
 static llvm::cl::opt<std::string>
+    SourceScope("source-scope",
+                llvm::cl::desc("Source set used when no files are passed: auto, production, "
+                               "project, or all. Meson builds default to root-project "
+                               "non-test targets in auto/production mode."),
+                llvm::cl::init("auto"), llvm::cl::cat(ASTHarborCategory));
+
+static llvm::cl::opt<std::string>
     CompareCompilers("compare-compilers",
                      llvm::cl::desc("Comma-separated list of compilers for `astharbor "
                                     "compare`. Defaults to 'clang++,g++'. Each compiler is "
@@ -156,6 +164,7 @@ static void applyConfigDefaults() {
         }
     };
     applyConfigString(Checks, projectConfig.checks);
+    applyConfigString(SourceScope, projectConfig.sourceScope);
     applyConfigString(Std, projectConfig.std);
     applyConfigString(CompilerProfile, projectConfig.compilerProfile);
     if (projectConfig.jobs > 0 && Jobs.getNumOccurrences() == 0) {
@@ -183,6 +192,8 @@ void print_help() {
     std::cout << "  --compiler-profile=P  Compiler dialect: auto (default), clang, or gcc\n";
     std::cout << "  --jobs=N            Run analysis across N parallel workers\n";
     std::cout << "  --changed-only      Only analyze files modified per `git diff`\n";
+    std::cout << "  --source-scope=S    Source set when no files are passed: auto,\n";
+    std::cout << "                      production, project, or all\n";
     std::cout << "\nFix options:\n";
     std::cout << "  --apply             Apply safe fixes (default: preview only)\n";
     std::cout << "  --dry-run           Preview fixes without applying\n";
@@ -340,6 +351,26 @@ executeProgram(const std::string &programName, const std::vector<std::string> &a
     return exitCode;
 }
 
+static std::optional<std::string> captureFirstLine(const char *command) {
+    FILE *pipe = popen(command, "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+    char buffer[4096];
+    std::string line;
+    if (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        line = buffer;
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+    }
+    int status = pclose(pipe);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || line.empty()) {
+        return std::nullopt;
+    }
+    return line;
+}
+
 static std::filesystem::path temporaryOutputPath(const std::string &prefix) {
     std::error_code ec;
     auto directory = std::filesystem::temp_directory_path(ec);
@@ -414,8 +445,41 @@ static std::vector<std::string> filterByChangedFiles(const std::vector<std::stri
     return filtered;
 }
 
+#ifdef __APPLE__
+static std::vector<std::string> darwinToolchainArguments() {
+    std::vector<std::string> arguments;
+
+    auto sdkPath = captureFirstLine("/usr/bin/xcrun --show-sdk-path 2>/dev/null");
+    if (sdkPath) {
+        std::filesystem::path sdkRoot(*sdkPath);
+        auto libcxxInclude = sdkRoot / "usr/include/c++/v1";
+        if (std::filesystem::exists(libcxxInclude)) {
+            arguments.push_back("-isystem");
+            arguments.push_back(libcxxInclude.string());
+        }
+        arguments.push_back("-isysroot");
+        arguments.push_back(sdkRoot.string());
+    }
+
+    auto resourceDir = captureFirstLine("clang++ -print-resource-dir 2>/dev/null");
+    if (resourceDir && std::filesystem::exists(*resourceDir)) {
+        arguments.push_back("-resource-dir");
+        arguments.push_back(*resourceDir);
+    }
+
+    return arguments;
+}
+#endif
+
 /// Apply --std and --compiler-profile adjusters to a ClangTool.
 static void applyCompilerAdjusters(ClangTool &tool) {
+#ifdef __APPLE__
+    static const std::vector<std::string> darwinArguments = darwinToolchainArguments();
+    if (!darwinArguments.empty()) {
+        tool.appendArgumentsAdjuster(
+            getInsertArgumentAdjuster(darwinArguments, ArgumentInsertPosition::BEGIN));
+    }
+#endif
     if (!Std.getValue().empty()) {
         tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(("-std=" + Std.getValue()).c_str(),
                                                                ArgumentInsertPosition::BEGIN));
@@ -446,6 +510,315 @@ struct AnalysisChunkResult {
     /// agree because they hash the same file content.
     std::map<std::string, std::string> depHashes;
 };
+
+struct ParsedCommand {
+    CommonOptionsParser parser;
+    std::unique_ptr<CompilationDatabase> compilationDb;
+    std::string compilationDbError;
+    std::optional<std::filesystem::path> buildPath;
+};
+
+static std::optional<std::string> extractBuildPath(const std::vector<const char *> &args) {
+    for (size_t index = 1; index < args.size(); ++index) {
+        std::string arg = args[index];
+        if (arg == "--") {
+            break;
+        }
+        if (arg == "-p" && index + 1 < args.size()) {
+            return std::string(args[index + 1]);
+        }
+        constexpr std::string_view prefix = "-p=";
+        if (arg.starts_with(prefix)) {
+            return arg.substr(prefix.size());
+        }
+    }
+    return std::nullopt;
+}
+
+static std::optional<std::filesystem::path>
+findCompilationDatabaseDirectory(const std::filesystem::path &start) {
+    std::error_code ec;
+    auto current = std::filesystem::absolute(start, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    if (std::filesystem::is_regular_file(current, ec) && !ec) {
+        current = current.parent_path();
+    }
+
+    while (true) {
+        auto candidate = current / "compile_commands.json";
+        if (std::filesystem::exists(candidate, ec) && !ec) {
+            return current;
+        }
+        auto parent = current.parent_path();
+        if (parent == current) {
+            return std::nullopt;
+        }
+        current = parent;
+    }
+}
+
+static std::unique_ptr<CompilationDatabase>
+loadCompilationDatabase(const std::optional<std::string> &buildPath, std::string &errorMessage,
+                        std::optional<std::filesystem::path> &resolvedBuildPath) {
+    if (buildPath) {
+        auto database = CompilationDatabase::loadFromDirectory(*buildPath, errorMessage);
+        if (database) {
+            std::error_code ec;
+            auto absolute = std::filesystem::absolute(*buildPath, ec);
+            resolvedBuildPath =
+                ec ? std::filesystem::path(*buildPath) : absolute.lexically_normal();
+        }
+        return database;
+    }
+
+    std::error_code ec;
+    auto currentDirectory = std::filesystem::current_path(ec);
+    if (ec) {
+        errorMessage = ec.message();
+        return nullptr;
+    }
+    auto database =
+        CompilationDatabase::autoDetectFromDirectory(currentDirectory.string(), errorMessage);
+    if (database) {
+        resolvedBuildPath = findCompilationDatabaseDirectory(currentDirectory);
+    }
+    return database;
+}
+
+static std::unique_ptr<CompilationDatabase>
+loadAdjustingCompilationDatabase(const std::optional<std::string> &buildPath,
+                                 CommonOptionsParser &parser, std::string &errorMessage,
+                                 std::optional<std::filesystem::path> &resolvedBuildPath) {
+    auto database = loadCompilationDatabase(buildPath, errorMessage, resolvedBuildPath);
+    if (!database) {
+        return nullptr;
+    }
+
+    auto adjustingDatabase = std::make_unique<ArgumentsAdjustingCompilations>(std::move(database));
+    auto parserAdjuster = parser.getArgumentsAdjuster();
+    if (parserAdjuster) {
+        adjustingDatabase->appendArgumentsAdjuster(std::move(parserAdjuster));
+    }
+    return adjustingDatabase;
+}
+
+static std::optional<llvm::json::Value> parseJsonFile(const std::filesystem::path &path) {
+    auto bufferOrError = llvm::MemoryBuffer::getFile(path.string());
+    if (!bufferOrError) {
+        return std::nullopt;
+    }
+    auto parsed = llvm::json::parse((*bufferOrError)->getBuffer());
+    if (!parsed) {
+        llvm::consumeError(parsed.takeError());
+        return std::nullopt;
+    }
+    return std::move(*parsed);
+}
+
+static std::string normalizedExistingPath(const std::string &path) {
+    std::error_code ec;
+    auto canonical = std::filesystem::canonical(path, ec);
+    if (!ec) {
+        return canonical.string();
+    }
+    auto absolute = std::filesystem::absolute(path, ec);
+    if (!ec) {
+        return absolute.lexically_normal().string();
+    }
+    return std::filesystem::path(path).lexically_normal().string();
+}
+
+static std::string compileCommandSourcePath(const CompileCommand &command) {
+    std::filesystem::path sourcePath(command.Filename);
+    if (sourcePath.is_relative() && !command.Directory.empty()) {
+        sourcePath = std::filesystem::path(command.Directory) / sourcePath;
+    }
+
+    std::error_code ec;
+    auto canonical = std::filesystem::canonical(sourcePath, ec);
+    if (!ec) {
+        return canonical.string();
+    }
+    auto absolute = std::filesystem::absolute(sourcePath, ec);
+    if (!ec) {
+        return absolute.lexically_normal().string();
+    }
+    return sourcePath.lexically_normal().string();
+}
+
+static std::set<std::string> mesonTestExecutables(const std::filesystem::path &buildPath) {
+    std::set<std::string> executables;
+    auto testsJson = parseJsonFile(buildPath / "meson-info" / "intro-tests.json");
+    if (!testsJson) {
+        return executables;
+    }
+
+    const auto *tests = testsJson->getAsArray();
+    if (tests == nullptr) {
+        return executables;
+    }
+    for (const auto &testValue : *tests) {
+        const auto *test = testValue.getAsObject();
+        if (test == nullptr) {
+            continue;
+        }
+        const auto *cmd = test->getArray("cmd");
+        if (cmd == nullptr || cmd->empty()) {
+            continue;
+        }
+        if (auto executable = (*cmd)[0].getAsString()) {
+            executables.insert(normalizedExistingPath(executable->str()));
+        }
+    }
+    return executables;
+}
+
+static bool targetMatchesTestExecutable(const llvm::json::Object &target,
+                                        const std::set<std::string> &testExecutables) {
+    const auto *filenames = target.getArray("filename");
+    if (filenames == nullptr) {
+        return false;
+    }
+    for (const auto &filenameValue : *filenames) {
+        if (auto filename = filenameValue.getAsString()) {
+            if (testExecutables.count(normalizedExistingPath(filename->str())) > 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool isRootMesonTarget(const llvm::json::Object &target) {
+    auto subproject = target.getString("subproject");
+    return !subproject || subproject->empty();
+}
+
+static bool isCOrCxxSource(const std::string &path) {
+    std::filesystem::path sourcePath(path);
+    std::string extension = sourcePath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    static const std::set<std::string> sourceExtensions = {".c",   ".cc", ".cpp", ".cxx",
+                                                           ".c++", ".m",  ".mm"};
+    return sourceExtensions.count(extension) > 0;
+}
+
+static std::vector<std::string>
+sourcePathsFromMesonIntrospection(const std::filesystem::path &buildPath, bool includeTests) {
+    std::vector<std::string> sourcePaths;
+    std::set<std::string> seen;
+
+    auto targetsJson = parseJsonFile(buildPath / "meson-info" / "intro-targets.json");
+    if (!targetsJson) {
+        return sourcePaths;
+    }
+    const auto *targets = targetsJson->getAsArray();
+    if (targets == nullptr) {
+        return sourcePaths;
+    }
+
+    std::set<std::string> testExecutables;
+    if (!includeTests) {
+        testExecutables = mesonTestExecutables(buildPath);
+    }
+
+    for (const auto &targetValue : *targets) {
+        const auto *target = targetValue.getAsObject();
+        if (target == nullptr || !isRootMesonTarget(*target)) {
+            continue;
+        }
+        if (!includeTests && targetMatchesTestExecutable(*target, testExecutables)) {
+            continue;
+        }
+
+        const auto *targetSources = target->getArray("target_sources");
+        if (targetSources == nullptr) {
+            continue;
+        }
+        for (const auto &sourceGroupValue : *targetSources) {
+            const auto *sourceGroup = sourceGroupValue.getAsObject();
+            if (sourceGroup == nullptr) {
+                continue;
+            }
+            const auto *sources = sourceGroup->getArray("sources");
+            if (sources == nullptr) {
+                continue;
+            }
+            for (const auto &sourceValue : *sources) {
+                auto source = sourceValue.getAsString();
+                if (!source || !isCOrCxxSource(source->str())) {
+                    continue;
+                }
+                std::string sourcePath = normalizedExistingPath(source->str());
+                if (seen.insert(sourcePath).second) {
+                    sourcePaths.push_back(std::move(sourcePath));
+                }
+            }
+        }
+    }
+    return sourcePaths;
+}
+
+static std::vector<std::string>
+sourcePathsFromCompilationDatabase(CompilationDatabase &compilationDb) {
+    std::vector<std::string> sourcePaths;
+    std::set<std::string> seen;
+
+    for (const auto &command : compilationDb.getAllCompileCommands()) {
+        std::string sourcePath = compileCommandSourcePath(command);
+        if (seen.insert(sourcePath).second) {
+            sourcePaths.push_back(std::move(sourcePath));
+        }
+    }
+    if (!sourcePaths.empty()) {
+        return sourcePaths;
+    }
+
+    for (auto &path : compilationDb.getAllFiles()) {
+        if (seen.insert(path).second) {
+            sourcePaths.push_back(std::move(path));
+        }
+    }
+    return sourcePaths;
+}
+
+static std::vector<std::string>
+sourcePathsForZeroSourceRun(CompilationDatabase &compilationDb,
+                            const std::optional<std::filesystem::path> &buildPath, bool verbose) {
+    std::string scope = SourceScope.getValue();
+    std::transform(scope.begin(), scope.end(), scope.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    if (scope != "auto" && scope != "production" && scope != "project" && scope != "all") {
+        llvm::errs() << "Warning: unknown --source-scope '" << SourceScope.getValue()
+                     << "', falling back to auto\n";
+        scope = "auto";
+    }
+
+    if (scope != "all" && buildPath) {
+        const bool includeTests = scope == "project";
+        auto mesonSources = sourcePathsFromMesonIntrospection(*buildPath, includeTests);
+        if (!mesonSources.empty()) {
+            if (verbose) {
+                llvm::errs() << "[verbose] Auto-discovered " << mesonSources.size()
+                             << " source files from Meson "
+                             << (includeTests ? "root project targets" : "root production targets")
+                             << "\n";
+            }
+            return mesonSources;
+        }
+    }
+
+    auto sourcePaths = sourcePathsFromCompilationDatabase(compilationDb);
+    if (verbose) {
+        llvm::errs() << "[verbose] Auto-discovered " << sourcePaths.size()
+                     << " source files from compilation database\n";
+    }
+    return sourcePaths;
+}
 
 /// Run analysis on a single chunk of source files with a fresh RuleRegistry.
 /// Used as the per-worker function for parallel analysis; the sequential
@@ -517,13 +890,17 @@ static AnalysisChunkResult runAnalysisChunk(const std::vector<std::string> &chun
 }
 
 /// Set up CommonOptionsParser from argv (skipping the subcommand).
-static std::optional<CommonOptionsParser> setupParser(int argc, const char **argv) {
+static std::optional<ParsedCommand> setupParser(int argc, const char **argv) {
     std::vector<const char *> args;
     args.push_back(argv[0]);
     for (int index = 2; index < argc; ++index) {
+        if (index == argc - 1 && std::string(argv[index]) == "--") {
+            continue;
+        }
         args.push_back(argv[index]);
     }
     int newArgc = static_cast<int>(args.size());
+    auto buildPath = extractBuildPath(args);
 
     auto expectedParser =
         CommonOptionsParser::create(newArgc, args.data(), ASTHarborCategory, llvm::cl::ZeroOrMore);
@@ -531,27 +908,45 @@ static std::optional<CommonOptionsParser> setupParser(int argc, const char **arg
         llvm::errs() << expectedParser.takeError();
         return std::nullopt;
     }
-    return std::move(*expectedParser);
+
+    std::string databaseError;
+    std::unique_ptr<CompilationDatabase> compilationDb;
+    std::optional<std::filesystem::path> resolvedBuildPath;
+    if (buildPath || expectedParser->getSourcePathList().empty()) {
+        compilationDb = loadAdjustingCompilationDatabase(buildPath, *expectedParser, databaseError,
+                                                         resolvedBuildPath);
+    }
+
+    return ParsedCommand{std::move(*expectedParser), std::move(compilationDb),
+                         std::move(databaseError), std::move(resolvedBuildPath)};
 }
 
 /// Run analysis and return findings. Honors --jobs, --changed-only, --checks,
 /// --std, --compiler-profile, --verbose.
-static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
+static std::pair<AnalysisResult, int> runAnalysis(ParsedCommand &parsed,
                                                   const RuleRegistry &registry) {
     const bool verbose = Verbose.getValue();
-    std::vector<std::string> sourcePaths = parser.getSourcePathList();
-    CompilationDatabase &compilationDb = parser.getCompilations();
+    std::vector<std::string> sourcePaths = parsed.parser.getSourcePathList();
+    CompilationDatabase *compilationDb = parsed.compilationDb.get();
+    if (compilationDb == nullptr && !sourcePaths.empty()) {
+        compilationDb = &parsed.parser.getCompilations();
+    }
 
     if (sourcePaths.empty()) {
-        sourcePaths = compilationDb.getAllFiles();
+        if (compilationDb == nullptr) {
+            llvm::errs() << "Error: No source files specified and could not load a compilation "
+                            "database";
+            if (!parsed.compilationDbError.empty()) {
+                llvm::errs() << ": " << parsed.compilationDbError;
+            }
+            llvm::errs() << "\n";
+            return {{}, 2};
+        }
+        sourcePaths = sourcePathsForZeroSourceRun(*compilationDb, parsed.buildPath, verbose);
         if (sourcePaths.empty()) {
             llvm::errs() << "Error: No source files specified and could not find any in the "
                             "compilation database.\n";
             return {{}, 2};
-        }
-        if (verbose) {
-            llvm::errs() << "[verbose] Auto-discovered " << sourcePaths.size()
-                         << " source files from compilation database\n";
         }
     }
 
@@ -765,7 +1160,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
 
     if (workerCount == 1) {
         auto chunkResult =
-            runAnalysisChunk(sourcePaths, compilationDb, positivePatterns, negativePatterns);
+            runAnalysisChunk(sourcePaths, *compilationDb, positivePatterns, negativePatterns);
         allFindings = std::move(chunkResult.findings);
         worstExitCode = chunkResult.exitCode;
         collectedDependencies = std::move(chunkResult.dependencies);
@@ -785,7 +1180,7 @@ static std::pair<AnalysisResult, int> runAnalysis(CommonOptionsParser &parser,
                 continue;
             }
             futures.push_back(std::async(std::launch::async, [&, chunk]() {
-                return runAnalysisChunk(chunk, compilationDb, positivePatterns, negativePatterns);
+                return runAnalysisChunk(chunk, *compilationDb, positivePatterns, negativePatterns);
             }));
         }
         for (auto &future : futures) {
@@ -1519,6 +1914,11 @@ int main(int argc, const char **argv) {
             << "\n"
             << "# Jobs: parallel analysis workers. Leave unset to default to 1.\n"
             << "# Jobs: 4\n"
+            << "\n"
+            << "# SourceScope: zero-source analysis scope. auto/production prefer\n"
+            << "# root project non-test targets when build metadata supports it.\n"
+            << "# Values: auto | production | project | all\n"
+            << "# SourceScope: \"auto\"\n"
             << "\n"
             << "# Std: language standard for single-file mode (no compile_commands.json).\n"
             << "# Std: \"c++20\"\n"
