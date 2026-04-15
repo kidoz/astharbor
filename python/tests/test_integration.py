@@ -78,12 +78,10 @@ def test_cpp_fixture_findings_use_canonical_paths():
     assert data["findings"], "expected some findings in the C++ fixture"
     for finding in data["findings"]:
         file_path = finding["file"]
-        assert os.path.isabs(file_path), \
-            f"finding path is not absolute: {file_path!r}"
+        assert os.path.isabs(file_path), f"finding path is not absolute: {file_path!r}"
         # Real-path resolution strips any symlink indirection (e.g.
         # /tmp → /private/tmp on macOS); the resulting path must exist.
-        assert os.path.exists(file_path), \
-            f"finding path does not exist on disk: {file_path!r}"
+        assert os.path.exists(file_path), f"finding path does not exist on disk: {file_path!r}"
 
 
 def test_cpp_fixture_produces_safe_autofixes():

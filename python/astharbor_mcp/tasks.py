@@ -116,8 +116,7 @@ manager = TaskManager()
 # ── Worker implementations ─────────────────────────────────────────────
 
 
-def analyze_project_worker(task: Task, directory: str, checks: str,
-                            jobs: int) -> str:
+def analyze_project_worker(task: Task, directory: str, checks: str, jobs: int) -> str:
     """Background worker: runs `astharbor analyze` on a project directory."""
     task.progress_message = f"invoking astharbor analyze on {directory}"
     extra_args_parts: list[str] = []

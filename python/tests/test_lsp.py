@@ -84,13 +84,16 @@ def test_did_open_publishes_diagnostics_for_real_file(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
 
     # Exactly one publishDiagnostics notification should be emitted.
-    notifications = [msg for msg in server.sent
-                     if msg.get("method") == "textDocument/publishDiagnostics"]
+    notifications = [
+        msg for msg in server.sent if msg.get("method") == "textDocument/publishDiagnostics"
+    ]
     assert len(notifications) == 1
     params = notifications[0]["params"]
     assert params["uri"] == uri
@@ -105,14 +108,17 @@ def test_did_save_republishes_diagnostics(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     server.sent.clear()
     server._handle_did_save({"textDocument": {"uri": uri}})
 
-    notifications = [msg for msg in server.sent
-                     if msg.get("method") == "textDocument/publishDiagnostics"]
+    notifications = [
+        msg for msg in server.sent if msg.get("method") == "textDocument/publishDiagnostics"
+    ]
     assert len(notifications) == 1
     assert notifications[0]["params"]["uri"] == uri
 
@@ -123,14 +129,17 @@ def test_did_close_clears_diagnostics(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     server.sent.clear()
     server._handle_did_close({"textDocument": {"uri": uri}})
 
-    notifications = [msg for msg in server.sent
-                     if msg.get("method") == "textDocument/publishDiagnostics"]
+    notifications = [
+        msg for msg in server.sent if msg.get("method") == "textDocument/publishDiagnostics"
+    ]
     assert len(notifications) == 1
     params = notifications[0]["params"]
     assert params["uri"] == uri
@@ -147,13 +156,10 @@ def test_initialize_advertises_code_action_provider():
 
 def test_byte_offset_to_position_ascii():
     encoded, line_starts = lsp._build_line_index("line0\nline1\nline2\n")
-    assert lsp._byte_offset_to_position(encoded, line_starts, 0) == \
-        {"line": 0, "character": 0}
+    assert lsp._byte_offset_to_position(encoded, line_starts, 0) == {"line": 0, "character": 0}
     # Offset 6 is right after the first newline → start of line 1.
-    assert lsp._byte_offset_to_position(encoded, line_starts, 6) == \
-        {"line": 1, "character": 0}
-    assert lsp._byte_offset_to_position(encoded, line_starts, 9) == \
-        {"line": 1, "character": 3}
+    assert lsp._byte_offset_to_position(encoded, line_starts, 6) == {"line": 1, "character": 0}
+    assert lsp._byte_offset_to_position(encoded, line_starts, 9) == {"line": 1, "character": 3}
 
 
 def test_byte_offset_to_position_non_ascii():
@@ -170,28 +176,34 @@ def test_code_action_returns_quickfix_for_safe_fix(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     # At least one cached finding should have been stored.
     assert server._findings_by_uri.get(uri)
     server.sent.clear()
 
     # Request code actions for the entire file; no context diagnostics so
     # every cached finding with a safe fix should be returned.
-    server._handle_code_action(request_id=99, params={
-        "textDocument": {"uri": uri},
-        "range": {"start": {"line": 0, "character": 0},
-                   "end": {"line": 9999, "character": 0}},
-        "context": {"diagnostics": []},
-    })
+    server._handle_code_action(
+        request_id=99,
+        params={
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 9999, "character": 0}},
+            "context": {"diagnostics": []},
+        },
+    )
 
     assert len(server.sent) == 1
     actions = server.sent[0]["result"]
     assert actions, "expected at least one code action for the nullptr fix"
-    nullptr_actions = [a for a in actions
-                       if any(d.get("code") == "modernize/use-nullptr"
-                              for d in a.get("diagnostics", []))]
+    nullptr_actions = [
+        a
+        for a in actions
+        if any(d.get("code") == "modernize/use-nullptr" for d in a.get("diagnostics", []))
+    ]
     assert nullptr_actions
     action = nullptr_actions[0]
     assert action["kind"] == "quickfix"
@@ -207,22 +219,32 @@ def test_code_action_filters_by_context_diagnostics(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     server.sent.clear()
 
     # Context with a diagnostic whose code does not match anything.
-    server._handle_code_action(request_id=100, params={
-        "textDocument": {"uri": uri},
-        "range": {"start": {"line": 0, "character": 0},
-                   "end": {"line": 9999, "character": 0}},
-        "context": {"diagnostics": [{
-            "code": "does-not-exist",
-            "range": {"start": {"line": 0, "character": 0},
-                       "end": {"line": 0, "character": 0}},
-        }]},
-    })
+    server._handle_code_action(
+        request_id=100,
+        params={
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 9999, "character": 0}},
+            "context": {
+                "diagnostics": [
+                    {
+                        "code": "does-not-exist",
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 0},
+                        },
+                    }
+                ]
+            },
+        },
+    )
     assert server.sent[0]["result"] == []
 
 
@@ -233,12 +255,14 @@ def test_code_action_without_prior_analysis_is_empty(tmp_path):
 
     server = CapturingServer()
     # Deliberately skip did_open — no cached findings.
-    server._handle_code_action(request_id=101, params={
-        "textDocument": {"uri": uri},
-        "range": {"start": {"line": 0, "character": 0},
-                   "end": {"line": 0, "character": 0}},
-        "context": {"diagnostics": []},
-    })
+    server._handle_code_action(
+        request_id=101,
+        params={
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
+            "context": {"diagnostics": []},
+        },
+    )
     assert server.sent[0]["result"] == []
 
 
@@ -255,19 +279,24 @@ def test_hover_returns_rule_info_on_finding_line(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     # Find the line of the first finding (0-based).
     findings = server._findings_by_uri.get(uri, [])
     assert findings, "expected findings from the example file"
     hover_line = max(0, int(findings[0].get("line", 1)) - 1)
     server.sent.clear()
 
-    server._handle_hover(request_id=200, params={
-        "textDocument": {"uri": uri},
-        "position": {"line": hover_line, "character": 0},
-    })
+    server._handle_hover(
+        request_id=200,
+        params={
+            "textDocument": {"uri": uri},
+            "position": {"line": hover_line, "character": 0},
+        },
+    )
     assert len(server.sent) == 1
     result = server.sent[0]["result"]
     assert result is not None
@@ -281,16 +310,21 @@ def test_hover_returns_null_on_clean_line(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     server.sent.clear()
 
     # Line 0 is unlikely to have a finding (it's typically a comment or include).
-    server._handle_hover(request_id=201, params={
-        "textDocument": {"uri": uri},
-        "position": {"line": 0, "character": 0},
-    })
+    server._handle_hover(
+        request_id=201,
+        params={
+            "textDocument": {"uri": uri},
+            "position": {"line": 0, "character": 0},
+        },
+    )
     assert server.sent[0]["result"] is None
 
 
@@ -300,13 +334,14 @@ def test_did_change_configuration_re_analyzes(tmp_path):
     uri = lsp._path_to_uri(str(source))
 
     server = CapturingServer()
-    server._handle_did_open({
-        "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
-    })
+    server._handle_did_open(
+        {
+            "textDocument": {"uri": uri, "languageId": "cpp", "version": 1, "text": ""},
+        }
+    )
     server.sent.clear()
 
     server._handle_did_change_configuration({})
-    reanalyzed = [m for m in server.sent
-                  if m.get("method") == "textDocument/publishDiagnostics"]
+    reanalyzed = [m for m in server.sent if m.get("method") == "textDocument/publishDiagnostics"]
     assert len(reanalyzed) == 1
     assert reanalyzed[0]["params"]["uri"] == uri

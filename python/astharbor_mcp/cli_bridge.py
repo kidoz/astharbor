@@ -20,9 +20,7 @@ def get_astharbor_path() -> str:
         candidate = os.path.join(repo_root, build_dir, "astharbor")
         if os.path.exists(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    raise FileNotFoundError(
-        "Could not find 'astharbor' executable in PATH or build directories."
-    )
+    raise FileNotFoundError("Could not find 'astharbor' executable in PATH or build directories.")
 
 
 def run_cli(*args: str) -> str:
@@ -32,14 +30,10 @@ def run_cli(*args: str) -> str:
     Exit code 1 (findings present) is not an error.
     """
     executable = get_astharbor_path()
-    result = subprocess.run(
-        [executable, *args], capture_output=True, text=True
-    )
+    result = subprocess.run([executable, *args], capture_output=True, text=True)
     if result.returncode >= 2:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise RuntimeError(
-            f"astharbor failed (exit code {result.returncode}):\n{detail}"
-        )
+        raise RuntimeError(f"astharbor failed (exit code {result.returncode}):\n{detail}")
     return result.stdout
 
 

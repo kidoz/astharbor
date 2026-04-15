@@ -84,21 +84,27 @@ def _build_line_index(text: str) -> tuple[bytes, list[int]]:
     return encoded, line_starts
 
 
-def _byte_offset_to_position(encoded: bytes, line_starts: list[int],
-                              byte_offset: int) -> dict[str, int]:
+def _byte_offset_to_position(
+    encoded: bytes, line_starts: list[int], byte_offset: int
+) -> dict[str, int]:
     """Convert a byte offset into an LSP position using a prebuilt index."""
     clamped = max(0, min(byte_offset, len(encoded)))
     # Binary search for the last line-start <= clamped.
     import bisect
+
     line = bisect.bisect_right(line_starts, clamped) - 1
-    line_prefix = encoded[line_starts[line]:clamped].decode("utf-8", errors="replace")
+    line_prefix = encoded[line_starts[line] : clamped].decode("utf-8", errors="replace")
     character = len(line_prefix.encode("utf-16-le")) // 2
     return {"line": line, "character": character}
 
 
-def _fix_to_code_action(fix: dict[str, Any], diagnostic: dict[str, Any],
-                        uri: str, encoded: bytes,
-                        line_starts: list[int]) -> dict[str, Any] | None:
+def _fix_to_code_action(
+    fix: dict[str, Any],
+    diagnostic: dict[str, Any],
+    uri: str,
+    encoded: bytes,
+    line_starts: list[int],
+) -> dict[str, Any] | None:
     """Map one ASTHarbor fix to an LSP CodeAction with a WorkspaceEdit.
 
     The CLI only emits offset/length on fixes whose edits are byte-
@@ -187,8 +193,9 @@ class LspServer:
         sys.stdout.buffer.write(body.encode("utf-8"))
         sys.stdout.buffer.flush()
 
-    def _respond(self, request_id: Any, result: Any = None,
-                 error: dict[str, Any] | None = None) -> None:
+    def _respond(
+        self, request_id: Any, result: Any = None, error: dict[str, Any] | None = None
+    ) -> None:
         response: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id}
         if error is not None:
             response["error"] = error
@@ -221,10 +228,13 @@ class LspServer:
             },
             "hoverProvider": True,
         }
-        self._respond(request_id, result={
-            "capabilities": capabilities,
-            "serverInfo": {"name": "astharbor-lsp", "version": "0.1"},
-        })
+        self._respond(
+            request_id,
+            result={
+                "capabilities": capabilities,
+                "serverInfo": {"name": "astharbor-lsp", "version": "0.1"},
+            },
+        )
 
     def _handle_shutdown(self, request_id: Any, _params: dict[str, Any]) -> None:
         self._respond(request_id, result=None)
@@ -252,8 +262,7 @@ class LspServer:
             return
         self._findings_by_uri.pop(uri, None)
         self._text_by_uri.pop(uri, None)
-        self._notify("textDocument/publishDiagnostics",
-                     {"uri": uri, "diagnostics": []})
+        self._notify("textDocument/publishDiagnostics", {"uri": uri, "diagnostics": []})
 
     def _handle_did_change_configuration(self, params: dict[str, Any]) -> None:
         """Re-analyze all open files when workspace configuration changes.
@@ -262,8 +271,7 @@ class LspServer:
         checks pattern, header-filter regex) and see the effect without
         restarting the language server.
         """
-        log.info("Configuration changed — re-analyzing %d open file(s)",
-                 len(self._findings_by_uri))
+        log.info("Configuration changed — re-analyzing %d open file(s)", len(self._findings_by_uri))
         for uri in list(self._findings_by_uri.keys()):
             self._analyze_and_publish(uri, _uri_to_path(uri))
 
@@ -284,14 +292,13 @@ class LspServer:
             severity = finding.get("severity", "warning")
             message = finding.get("message", "")
             category = finding.get("category", "")
-            markdown = (
-                f"**[{rule_id}]** ({severity})\n\n"
-                f"{message}\n\n"
-                f"Category: `{category}`"
+            markdown = f"**[{rule_id}]** ({severity})\n\n{message}\n\nCategory: `{category}`"
+            self._respond(
+                request_id,
+                result={
+                    "contents": {"kind": "markdown", "value": markdown},
+                },
             )
-            self._respond(request_id, result={
-                "contents": {"kind": "markdown", "value": markdown},
-            })
             return
         self._respond(request_id, result=None)
 
@@ -323,8 +330,7 @@ class LspServer:
         wanted: set[tuple[str, int]] | None = None
         if context_diagnostics:
             wanted = {
-                (str(diag.get("code", "")),
-                 diag.get("range", {}).get("start", {}).get("line", -1))
+                (str(diag.get("code", "")), diag.get("range", {}).get("start", {}).get("line", -1))
                 for diag in context_diagnostics
             }
 
@@ -332,8 +338,7 @@ class LspServer:
         for finding in findings:
             diagnostic = _finding_to_diagnostic(finding)
             if wanted is not None:
-                key = (str(diagnostic.get("code", "")),
-                       diagnostic["range"]["start"]["line"])
+                key = (str(diagnostic.get("code", "")), diagnostic["range"]["start"]["line"])
                 if key not in wanted:
                     continue
             for fix in finding.get("fixes", []):
@@ -379,8 +384,7 @@ class LspServer:
         # Prime the file-text cache now so code-action requests don't
         # have to go to disk on the first invocation after open/save.
         self._load_file_text(uri)
-        self._notify("textDocument/publishDiagnostics",
-                     {"uri": uri, "diagnostics": diagnostics})
+        self._notify("textDocument/publishDiagnostics", {"uri": uri, "diagnostics": diagnostics})
 
     # ── Main loop ──────────────────────────────────────────────────────
 
@@ -422,10 +426,13 @@ class LspServer:
                 # a request; notifications silently ignore unknown methods
                 # per the LSP spec.
                 if request_id is not None:
-                    self._respond(request_id, error={
-                        "code": -32601,
-                        "message": f"Method not found: {method}",
-                    })
+                    self._respond(
+                        request_id,
+                        error={
+                            "code": -32601,
+                            "message": f"Method not found: {method}",
+                        },
+                    )
         return 0
 
 
