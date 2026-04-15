@@ -22,6 +22,7 @@ class RunCache:
         """Store an analysis result and return its run_id."""
         run_id = result.run_id
         if run_id in self._cache:
+            self._cache[run_id] = result
             self._cache.move_to_end(run_id)
         else:
             self._cache[run_id] = result
@@ -54,10 +55,33 @@ class RunCache:
             "byCategory": category_counts,
         }
 
-    def get_finding(self, run_id: str, index: int) -> dict | None:
-        """Get a specific finding from a cached run by index."""
+    def get_finding_by_id(self, run_id: str, finding_id: str) -> dict | None:
+        """Get a specific finding from a cached run by stable findingId."""
         result = self.get(run_id)
-        if result is None or index < 0 or index >= len(result.findings):
+        if result is None:
+            return None
+        for finding in result.findings:
+            if finding.finding_id == finding_id:
+                return json.loads(finding.model_dump_json(by_alias=True))
+        return None
+
+    def get_finding(self, run_id: str, identifier: int | str) -> dict | None:
+        """Get a finding by stable findingId, with index fallback for legacy callers."""
+        result = self.get(run_id)
+        if result is None:
+            return None
+
+        if isinstance(identifier, str):
+            by_id = self.get_finding_by_id(run_id, identifier)
+            if by_id is not None:
+                return by_id
+            if not identifier.isdigit():
+                return None
+            index = int(identifier)
+        else:
+            index = identifier
+
+        if index < 0 or index >= len(result.findings):
             return None
         finding = result.findings[index]
         return json.loads(finding.model_dump_json(by_alias=True))

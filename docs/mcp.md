@@ -132,12 +132,13 @@ Run the doctor command and return its text output.
 astharbor doctor
 ```
 
-#### `read_finding(run_id: str, finding_index: int) -> str`
+#### `read_finding(run_id: str, finding_id: str) -> str`
 
 Read a specific finding from a cached analysis run. The `run_id` is the one
 returned inside the JSON produced by `analyze_file` or `analyze_project`;
-`finding_index` is a zero-based index into the `findings` array. Returns an
-error string if the run or index is unknown.
+`finding_id` is the stable `findingId` from the finding payload. Numeric
+indexes are still accepted for compatibility with older clients. Returns an
+error string if the run or finding is unknown.
 
 ### Background task tools
 
@@ -229,9 +230,9 @@ Returns a summary for a cached run:
 }
 ```
 
-### `finding://{run_id}/{index}`
+### `finding://{run_id}/{finding_id}`
 
-Returns the full details of a specific finding (by zero-based index) from a
+Returns the full details of a specific finding by stable `findingId` from a
 cached analysis run, including all fix objects.
 
 ### `rule://{rule_id}`

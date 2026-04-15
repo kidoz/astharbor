@@ -110,11 +110,11 @@ def doctor_toolchains() -> str:
 
 
 @mcp.tool()
-def read_finding(run_id: str, finding_index: int) -> str:
+def read_finding(run_id: str, finding_id: str | int) -> str:
     """Read a specific finding from a cached analysis run."""
-    finding = cache.get_finding(run_id, finding_index)
+    finding = cache.get_finding(run_id, finding_id)
     if finding is None:
-        return f"Error: finding not found (run_id={run_id}, index={finding_index})"
+        return f"Error: finding not found (run_id={run_id}, finding_id={finding_id})"
     return json.dumps(finding, indent=2)
 
 
@@ -175,12 +175,12 @@ def run_summary(run_id: str) -> str:
     return json.dumps(summary, indent=2)
 
 
-@mcp.resource("finding://{run_id}/{index}")
-def finding_detail(run_id: str, index: int) -> str:
+@mcp.resource("finding://{run_id}/{finding_id}")
+def finding_detail(run_id: str, finding_id: str) -> str:
     """Detailed view of a specific finding from a cached run."""
-    finding = cache.get_finding(run_id, index)
+    finding = cache.get_finding(run_id, finding_id)
     if finding is None:
-        return f"Error: finding not found (run_id={run_id}, index={index})"
+        return f"Error: finding not found (run_id={run_id}, finding_id={finding_id})"
     return json.dumps(finding, indent=2)
 
 
